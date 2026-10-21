@@ -143,10 +143,8 @@ func toolLicenseTestBuilderAt(t *testing.T, level enterprise.Level) *llmcontext.
 	)
 }
 
-// TestHandleToolCallLicenseGate pins the license split for tool approvals:
-// built-in tools (empty ServerOrigin) and embedded Mattermost MCP tools
-// (mcp.EmbeddedClientKey) never require a license, while tools from remote
-// MCP servers require one to execute. Rejections never require a license.
+// TestHandleToolCallLicenseGate verifies that approvals and rejections work
+// for built-in, embedded, remote, and plugin MCP tools without a license.
 func TestHandleToolCallLicenseGate(t *testing.T) {
 	tests := []struct {
 		name                  string
@@ -154,7 +152,6 @@ func TestHandleToolCallLicenseGate(t *testing.T) {
 		origin                string
 		licensed              bool
 		accept                bool
-		wantErr               error
 		wantStatus            string
 		wantResult            string
 		wantFollowUp          bool
@@ -179,12 +176,13 @@ func TestHandleToolCallLicenseGate(t *testing.T) {
 			wantResult: "mcp:builtin_tool",
 		},
 		{
-			name:     "remote MCP tool approval is rejected without license",
-			toolName: "jira__get_issue",
-			origin:   toolLicenseRemoteOrigin,
-			licensed: false,
-			accept:   true,
-			wantErr:  ErrRemoteMCPNotLicensed,
+			name:       "remote MCP tool executes without license",
+			toolName:   "jira__get_issue",
+			origin:     toolLicenseRemoteOrigin,
+			licensed:   false,
+			accept:     true,
+			wantStatus: conversation.StatusSuccess,
+			wantResult: "mcp:jira__get_issue",
 		},
 		{
 			name:       "remote MCP tool executes with license",
@@ -207,12 +205,13 @@ func TestHandleToolCallLicenseGate(t *testing.T) {
 			wantRejectionGuidance: true,
 		},
 		{
-			name:     "plugin MCP tool approval is rejected without license",
-			toolName: "playbooks__run",
-			origin:   toolLicensePluginOrigin,
-			licensed: false,
-			accept:   true,
-			wantErr:  ErrRemoteMCPNotLicensed,
+			name:       "plugin MCP tool executes without license",
+			toolName:   "playbooks__run",
+			origin:     toolLicensePluginOrigin,
+			licensed:   false,
+			accept:     true,
+			wantStatus: conversation.StatusSuccess,
+			wantResult: "mcp:playbooks__run",
 		},
 		{
 			name:       "plugin MCP tool executes with license",
@@ -266,19 +265,6 @@ func TestHandleToolCallLicenseGate(t *testing.T) {
 			turns, turnsErr := convStore.GetTurnsForConversation(conv.ID)
 			require.NoError(t, turnsErr)
 
-			if tc.wantErr != nil {
-				require.ErrorIs(t, err, tc.wantErr)
-
-				// The pending decision must be left untouched so the user
-				// can act again once the server is licensed.
-				require.Len(t, turns, 1)
-				var untouched []conversation.ContentBlock
-				require.NoError(t, json.Unmarshal(turns[0].Content, &untouched))
-				require.Equal(t, conversation.StatusPending, untouched[0].Status)
-				require.Empty(t, lm.requests)
-				return
-			}
-
 			require.NoError(t, err)
 			require.Len(t, turns, 2)
 
@@ -303,10 +289,8 @@ func TestHandleToolCallLicenseGate(t *testing.T) {
 	}
 }
 
-// TestHandleToolResultLicenseGate pins the license split for the second-stage
-// share/keep-private decision: sharing output from a remote MCP tool requires
-// a license, while embedded Mattermost MCP output and keep-private decisions
-// do not.
+// TestHandleToolResultLicenseGate verifies that remote MCP output can be shared
+// or kept private without a license, and that the user decision is persisted.
 func TestHandleToolResultLicenseGate(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -314,7 +298,6 @@ func TestHandleToolResultLicenseGate(t *testing.T) {
 		origin     string
 		licensed   bool
 		accept     bool
-		wantErr    error
 		wantShared bool
 	}{
 		{
@@ -326,12 +309,12 @@ func TestHandleToolResultLicenseGate(t *testing.T) {
 			wantShared: true,
 		},
 		{
-			name:     "remote MCP result share is rejected without license",
-			toolName: "jira__get_issue",
-			origin:   toolLicenseRemoteOrigin,
-			licensed: false,
-			accept:   true,
-			wantErr:  ErrRemoteMCPNotLicensed,
+			name:       "remote MCP result shares without license",
+			toolName:   "jira__get_issue",
+			origin:     toolLicenseRemoteOrigin,
+			licensed:   false,
+			accept:     true,
+			wantShared: true,
 		},
 		{
 			name:       "remote MCP result shares with license",
@@ -412,12 +395,6 @@ func TestHandleToolResultLicenseGate(t *testing.T) {
 			var updatedResults []conversation.ContentBlock
 			require.NoError(t, json.Unmarshal(turns[1].Content, &updatedResults))
 
-			if tc.wantErr != nil {
-				require.ErrorIs(t, err, tc.wantErr)
-				require.Nil(t, updatedResults[0].DecidedAt, "rejected submission must not record a decision")
-				return
-			}
-
 			require.NoError(t, err)
 			require.NotNil(t, updatedResults[0].DecidedAt, "decision must be recorded")
 			if tc.wantShared {
@@ -471,17 +448,18 @@ func TestHandleToolCallRemoteMCPAtEveryLevel(t *testing.T) {
 
 				err = c.HandleToolCall(context.Background(), "user-id", approvalPost, channel, []string{"tool-use-1"}, nil)
 
-				if level >= enterprise.LevelEnterprise {
-					require.NoError(t, err)
-					return
-				}
-
-				require.ErrorIs(t, err, ErrRemoteMCPNotLicensed)
+				require.NoError(t, err)
+				turns, err := convStore.GetTurnsForConversation(conv.ID)
+				require.NoError(t, err)
+				require.Len(t, turns, 2)
+				var results []conversation.ContentBlock
+				require.NoError(t, json.Unmarshal(turns[1].Content, &results))
+				require.Equal(t, "mcp:"+origin.tool, results[0].Content)
 			})
 		}
 	}
 
-	t.Run("nil checker fails closed", func(t *testing.T) {
+	t.Run("nil checker keeps remote MCP approvals available", func(t *testing.T) {
 		convStore, conv := loadedStateConversationStore()
 		blocks := []conversation.ContentBlock{{
 			Type:         conversation.BlockTypeToolUse,
@@ -511,6 +489,6 @@ func TestHandleToolCallRemoteMCPAtEveryLevel(t *testing.T) {
 		channel := &model.Channel{Id: "channel-id", TeamId: "team-id", Type: model.ChannelTypeOpen}
 
 		err = c.HandleToolCall(context.Background(), "user-id", approvalPost, channel, []string{"tool-use-1"}, nil)
-		require.ErrorIs(t, err, ErrRemoteMCPNotLicensed)
+		require.NoError(t, err)
 	})
 }

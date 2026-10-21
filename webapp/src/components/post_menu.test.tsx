@@ -2,10 +2,14 @@
 // See LICENSE.txt for license information.
 
 import React from 'react';
-import {render, screen} from '@testing-library/react';
+import {fireEvent, render, screen, waitFor} from '@testing-library/react';
 import {IntlProvider} from 'react-intl';
+import {Provider} from 'react-redux';
+import {createStore} from 'redux';
 
 import {Post} from '@mattermost/types/posts';
+
+import {doThreadAnalysis} from '../client';
 
 import PostMenu from './post_menu';
 
@@ -20,18 +24,14 @@ jest.mock('react-intl', () => {
     };
 });
 
-jest.mock('@/license', () => ({
-    useIsLicensedFor: jest.fn(() => true),
-}));
-
 jest.mock('@/hooks', () => ({
     useSelectPost: () => jest.fn(),
 }));
 
 jest.mock('@/bots', () => ({
     useBotlistForChannel: () => ({
-        bots: [{username: 'matty', displayName: 'Matty'}],
-        activeBot: {username: 'matty', displayName: 'Matty'},
+        bots: [{id: 'bot1', username: 'matty', displayName: 'Matty'}],
+        activeBot: {id: 'bot1', username: 'matty', displayName: 'Matty'},
         setActiveBot: jest.fn(),
     }),
 }));
@@ -68,7 +68,14 @@ jest.mock('./dot_menu', () => ({
         </div>
     ),
     DropdownMenu: ({children}: {children: React.ReactNode}) => <div>{children}</div>,
-    DropdownMenuItem: ({label}: {label: React.ReactNode}) => <button type='button'>{label}</button>,
+    DropdownMenuItem: ({label, onClick}: {label: React.ReactNode; onClick?: () => void}) => (
+        <button
+            type='button'
+            onClick={onClick}
+        >
+            {label}
+        </button>
+    ),
 }));
 
 jest.mock('./bot_selector', () => ({
@@ -77,19 +84,27 @@ jest.mock('./bot_selector', () => ({
 
 const post = {id: 'post1', channel_id: 'chan1'} as Post;
 
-describe('PostMenu license gating', () => {
-    const {useIsLicensedFor} = jest.requireMock('@/license') as {useIsLicensedFor: jest.Mock};
-
-    beforeEach(() => {
-        useIsLicensedFor.mockReturnValue(true);
-    });
-
-    test('shows thread summarization actions at Professional', () => {
-        render(
+function renderMenu(skuShortName = '') {
+    const store = createStore(() => ({
+        entities: {
+            general: {
+                config: {EnableTesting: 'false', EnableDeveloper: 'false'},
+                license: {SkuShortName: skuShortName},
+            },
+        },
+    }));
+    return render(
+        <Provider store={store}>
             <IntlProvider locale='en'>
                 <PostMenu post={post}/>
-            </IntlProvider>,
-        );
+            </IntlProvider>
+        </Provider>,
+    );
+}
+
+describe('PostMenu summary availability', () => {
+    test.each(['', 'professional'])('shows thread summary actions for SKU "%s"', (sku) => {
+        renderMenu(sku);
 
         expect(screen.getByText('Summarize Thread')).not.toBeNull();
         expect(screen.getByText('Find action items')).not.toBeNull();
@@ -97,29 +112,19 @@ describe('PostMenu license gating', () => {
         expect(screen.getByText('React for me')).not.toBeNull();
     });
 
-    test('hides thread summarization actions below Professional and keeps React for me', () => {
-        useIsLicensedFor.mockReturnValue(false);
+    test('an unlicensed user can request a summary for the selected thread and agent', async () => {
+        const mockDoThreadAnalysis = doThreadAnalysis as jest.MockedFunction<typeof doThreadAnalysis>;
+        mockDoThreadAnalysis.mockResolvedValue({postid: 'summary', channelid: 'dm1'});
+        renderMenu();
 
-        render(
-            <IntlProvider locale='en'>
-                <PostMenu post={post}/>
-            </IntlProvider>,
-        );
-
-        expect(screen.queryByText('Summarize Thread')).toBeNull();
-        expect(screen.queryByText('Find action items')).toBeNull();
-        expect(screen.queryByText('Find open questions')).toBeNull();
-        expect(screen.getByText('React for me')).not.toBeNull();
+        fireEvent.click(screen.getByText('Summarize Thread'));
+        await waitFor(() => expect(mockDoThreadAnalysis).toHaveBeenCalledWith('post1', 'summarize_thread', 'bot1'));
     });
 });
 
 describe('PostMenu sizing', () => {
     test('uses small + compact IconButton to match host post-menu actions (28px)', () => {
-        render(
-            <IntlProvider locale='en'>
-                <PostMenu post={post}/>
-            </IntlProvider>,
-        );
+        renderMenu();
 
         const button = screen.getByTestId('ai-actions-menu');
         expect(button.getAttribute('data-size')).toBe('small');

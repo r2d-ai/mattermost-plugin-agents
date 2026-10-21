@@ -38,15 +38,11 @@ func TestOAuthStartLicenseGate(t *testing.T) {
 			e.api.ServeHTTP(&plugin.Context{}, recorder, req)
 			resp := recorder.Result()
 
-			if level >= enterprise.LevelEnterprise {
-				requireNotLicenseDenied(t, resp)
-				return
-			}
-			requireLicenseDenied(t, resp, enterprise.CapRemoteMCP)
+			requireNotLicenseDenied(t, resp)
 		})
 	}
 
-	t.Run("nil checker fails closed", func(t *testing.T) {
+	t.Run("nil checker keeps remote MCP available", func(t *testing.T) {
 		e := SetupTestEnvironment(t)
 		defer e.Cleanup(t)
 		e.api.licenseChecker = nil
@@ -56,7 +52,7 @@ func TestOAuthStartLicenseGate(t *testing.T) {
 		req.Header.Add("Mattermost-User-Id", testUserID)
 		recorder := httptest.NewRecorder()
 		e.api.ServeHTTP(&plugin.Context{}, recorder, req)
-		requireLicenseDenied(t, recorder.Result(), enterprise.CapRemoteMCP)
+		requireNotLicenseDenied(t, recorder.Result())
 	})
 }
 
@@ -84,13 +80,8 @@ func TestMCPRegisterLicenseGate(t *testing.T) {
 			req.Header.Set("Mattermost-Plugin-ID", testCallerPluginID)
 			resp := serveAndReturn(e, req)
 
-			if level >= enterprise.LevelEnterprise {
-				require.Equal(t, http.StatusOK, resp.StatusCode)
-				require.Len(t, e.mcp.registerCalls, 1)
-				return
-			}
-			requireLicenseDenied(t, resp, enterprise.CapRemoteMCP)
-			require.Empty(t, e.mcp.registerCalls)
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			require.Len(t, e.mcp.registerCalls, 1)
 		})
 	}
 }

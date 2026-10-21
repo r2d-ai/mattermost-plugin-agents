@@ -40,8 +40,8 @@ func (p *recordingMCPToolProvider) GetToolsWithSelection(_ stdcontext.Context, _
 }
 
 // The builder must resolve server eligibility before tools are requested, so
-// an agent, a user preference, or a missing license keeps a server from being
-// contacted at all.
+// agent allowlists and user preferences keep excluded servers from being
+// contacted at all, including on unlicensed servers.
 func TestBuilderPassesServerEligibilityToMCPProvider(t *testing.T) {
 	testCases := []struct {
 		name            string
@@ -63,7 +63,7 @@ func TestBuilderPassesServerEligibilityToMCPProvider(t *testing.T) {
 		},
 		{
 			name:     "agent allowlist narrows the selection to its origins",
-			licensed: true,
+			licensed: false,
 			botConfig: llm.BotConfig{
 				ID: "bot-id", Name: "matty",
 				EnabledMCPTools: []llm.EnabledMCPTool{
@@ -78,7 +78,7 @@ func TestBuilderPassesServerEligibilityToMCPProvider(t *testing.T) {
 			// A wildcard entry names no individual tool but still names its
 			// server, so the server stays eligible.
 			name:     "a wildcard allowlist entry selects its server",
-			licensed: true,
+			licensed: false,
 			botConfig: llm.BotConfig{
 				ID: "bot-id", Name: "matty",
 				EnabledMCPTools: []llm.EnabledMCPTool{
@@ -90,7 +90,7 @@ func TestBuilderPassesServerEligibilityToMCPProvider(t *testing.T) {
 		},
 		{
 			name:     "an agent that allowlists nothing selects no servers",
-			licensed: true,
+			licensed: false,
 			botConfig: llm.BotConfig{
 				ID: "bot-id", Name: "matty",
 			},
@@ -99,18 +99,17 @@ func TestBuilderPassesServerEligibilityToMCPProvider(t *testing.T) {
 		},
 		{
 			name:            "user-disabled servers are denied",
-			licensed:        true,
+			licensed:        false,
 			botConfig:       llm.BotConfig{ID: "bot-id", Name: "matty", AutoEnableNewMCPTools: true},
 			disabledOrigins: []string{githubOrigin},
 			wantDenied:      []string{githubOrigin},
 			wantToolNames:   []string{"builtin", "mattermost__read_channel", "jira__get_issue"},
 		},
 		{
-			name:            "unlicensed servers exclude everything but the embedded server",
-			licensed:        false,
-			botConfig:       llm.BotConfig{ID: "bot-id", Name: "matty", AutoEnableNewMCPTools: true},
-			wantExcludeRemo: true,
-			wantToolNames:   []string{"builtin", "mattermost__read_channel"},
+			name:          "unlicensed servers include remote tools",
+			licensed:      false,
+			botConfig:     llm.BotConfig{ID: "bot-id", Name: "matty", AutoEnableNewMCPTools: true},
+			wantToolNames: []string{"builtin", "mattermost__read_channel", "jira__get_issue", "github__search"},
 		},
 	}
 

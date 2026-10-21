@@ -293,7 +293,7 @@ func (a *API) checkAgentLicenseGates(c *gin.Context, proposed llm.BotConfig, pre
 		abortNotLicensed(c, err)
 		return false
 	}
-	// Below Enterprise only the active service may be newly selected.
+	// Apply service selection limits only when the capability policy requires them.
 	if !a.licenseChecker.Allows(enterprise.CapMultipleLLMServices) && (prev == nil || prev.ServiceID != proposed.ServiceID) {
 		if !slices.Contains(config.ActiveServiceIDs(a.pluginConfigOrEmpty(), level), proposed.ServiceID) {
 			abortNotLicensed(c, enterprise.NewLicenseError(enterprise.CapMultipleLLMServices, level))

@@ -26,8 +26,8 @@ import (
 // bug: on an unlicensed (or Professional) server, submitting tool decisions
 // failed with 403 "feature not licensed" even for embedded Mattermost MCP
 // tools and built-in tools. The endpoints must not blanket-reject on license;
-// only decisions involving remote MCP servers are license-gated (enforced in
-// conversations.HandleToolCall/HandleToolResult and covered by tests there).
+// tool policy checks remain in conversations.HandleToolCall/HandleToolResult
+// and are covered by tests there.
 func TestToolDecisionEndpointsNotBlanketLicenseGated(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	gin.DefaultWriter = io.Discard

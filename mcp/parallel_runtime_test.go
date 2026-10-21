@@ -517,9 +517,9 @@ func TestGetToolsForUserNeverContactsIneligibleServers(t *testing.T) {
 	}
 }
 
-// Without the MCP license, remote and plugin servers are off limits while the
-// embedded Mattermost server stays available.
-func TestGetToolsForUserSkipsRemoteServersWhenUnlicensed(t *testing.T) {
+// An explicit selection excluding remote servers still restricts remote and
+// plugin transports while the embedded Mattermost server stays available.
+func TestGetToolsForUserRespectsExplicitRemoteExclusion(t *testing.T) {
 	harness := newRuntimeHarness(t, "alice")
 	harness.addRemote("remotea", 1, 0)
 	harness.addPlugin("com.example.one", "pluginone", 1, 0)

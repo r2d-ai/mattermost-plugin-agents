@@ -41,20 +41,14 @@ func TestHandleMCPRegisterLicenseGate(t *testing.T) {
 
 			require.Len(t, *records, 1)
 			require.Equal(t, testCallerPluginID, (*records)[0].EventData.Parameters[audit.KeyCallerPluginID],
-				"the caller is attributed on success and on license denial")
+				"the caller remains attributed at every license level")
 
-			if level >= enterprise.LevelEnterprise {
-				require.Equal(t, http.StatusOK, resp.StatusCode)
-				require.Len(t, e.mcp.registerCalls, 1)
-				return
-			}
-
-			requireLicenseDenied(t, resp, enterprise.CapRemoteMCP)
-			require.Empty(t, e.mcp.registerCalls)
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			require.Len(t, e.mcp.registerCalls, 1)
 		})
 	}
 
-	t.Run("nil checker fails closed", func(t *testing.T) {
+	t.Run("nil checker keeps remote MCP available", func(t *testing.T) {
 		e := SetupTestEnvironment(t)
 		defer e.Cleanup(t)
 		e.api.licenseChecker = nil
@@ -62,8 +56,8 @@ func TestHandleMCPRegisterLicenseGate(t *testing.T) {
 		req := mcpRegisterRequest(t, validCfg)
 		req.Header.Set("Mattermost-Plugin-ID", testCallerPluginID)
 		resp := serveAndReturn(e, req)
-		requireLicenseDenied(t, resp, enterprise.CapRemoteMCP)
-		require.Empty(t, e.mcp.registerCalls)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Len(t, e.mcp.registerCalls, 1)
 	})
 }
 

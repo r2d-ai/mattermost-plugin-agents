@@ -36,7 +36,7 @@ const (
 )
 
 func licensedSearchService(getSearch func() embeddings.EmbeddingSearch, client mmapi.Client) *search.Search {
-	return search.New(getSearch, client, enterprisetest.CheckerAt(enterprise.LevelEnterprise))
+	return search.New(getSearch, client, enterprisetest.CheckerAt(enterprise.LevelUnlicensed))
 }
 
 func enabledSearchService(t *testing.T) *search.Search {
@@ -128,6 +128,7 @@ func TestHandleRunSearch(t *testing.T) {
 			e := SetupTestEnvironment(t)
 			defer e.Cleanup(t)
 
+			e.OverrideLicense(nil)
 			e.api.searchService = enabledSearchService(t)
 			e.setupTestBot(llm.BotConfig{Name: "test-bot", DisplayName: "Test Bot"})
 			if test.setup != nil {
@@ -152,7 +153,7 @@ func TestHandleRunSearchWithoutEmbeddingSearch(t *testing.T) {
 		name          string
 		searchService *search.Search
 	}{
-		{name: "embedding search not configured", searchService: search.New(nil, nil, enterprisetest.CheckerAt(enterprise.LevelEnterprise))},
+		{name: "embedding search not configured", searchService: search.New(nil, nil, enterprisetest.CheckerAt(enterprise.LevelUnlicensed))},
 		{name: "no search service", searchService: nil},
 	}
 
@@ -161,6 +162,7 @@ func TestHandleRunSearchWithoutEmbeddingSearch(t *testing.T) {
 			e := SetupTestEnvironment(t)
 			defer e.Cleanup(t)
 
+			e.OverrideLicense(nil)
 			e.api.searchService = test.searchService
 			e.setupTestBot(llm.BotConfig{Name: "test-bot", DisplayName: "Test Bot"})
 			e.mockAPI.On("GetUser", testUserID).Return(&model.User{Id: testUserID}, nil)
@@ -217,6 +219,7 @@ func TestHandleRunSearchMalformedJSON(t *testing.T) {
 			e := SetupTestEnvironment(t)
 			defer e.Cleanup(t)
 
+			e.OverrideLicense(nil)
 			e.api.searchService = enabledSearchService(t)
 			e.setupTestBot(llm.BotConfig{Name: "test-bot", DisplayName: "Test Bot"})
 
@@ -242,6 +245,7 @@ func TestHandleRunSearchMissingUserHeader(t *testing.T) {
 			e := SetupTestEnvironment(t)
 			defer e.Cleanup(t)
 
+			e.OverrideLicense(nil)
 			e.api.searchService = enabledSearchService(t)
 			e.setupTestBot(llm.BotConfig{Name: "test-bot", DisplayName: "Test Bot"})
 
@@ -268,6 +272,7 @@ func TestHandleRunSearchEnforcesUsageRestrictions(t *testing.T) {
 	e := SetupTestEnvironment(t)
 	defer e.Cleanup(t)
 
+	e.OverrideLicense(nil)
 	e.api.searchService = enabledSearchService(t)
 	e.setupTestBot(llm.BotConfig{
 		Name:            "restricted-bot",

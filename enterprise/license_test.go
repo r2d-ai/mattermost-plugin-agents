@@ -78,12 +78,20 @@ func TestLicenseCheckerUnlicensedFallback(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, LevelUnlicensed, tc.checker.Level())
-			require.True(t, tc.checker.Allows(CapMultiplayerChannels))
-			require.NoError(t, tc.checker.Check(CapMultiplayerChannels))
+			for _, capability := range []Capability{
+				CapMultiplayerChannels, CapThreadSummarization, CapChannelSummarization,
+				CapMultipleLLMServices, CapRemoteMCP, CapSemanticSearch, CapChannelAutoReply,
+			} {
+				require.True(t, tc.checker.Allows(capability))
+				require.NoError(t, tc.checker.Check(capability))
+			}
 			limit, capped := tc.checker.AgentLimit()
-			require.True(t, capped)
-			require.Equal(t, FreeAgentLimit, limit)
-			for _, capability := range []Capability{CapThreadSummarization, CapStateChangingTools, CapChannelAutoReply} {
+			require.False(t, capped)
+			require.Zero(t, limit)
+			limit, capped = tc.checker.ServiceLimit()
+			require.False(t, capped)
+			require.Zero(t, limit)
+			for _, capability := range []Capability{CapProviderWebSearch, CapStateChangingTools, CapMCPServiceAccount, Capability("unknown_capability")} {
 				require.False(t, tc.checker.Allows(capability))
 				var licErr *LicenseError
 				require.ErrorAs(t, tc.checker.Check(capability), &licErr)
@@ -128,22 +136,22 @@ func TestCapabilityMatrix(t *testing.T) {
 		min Level
 	}{
 		{CapMultiplayerChannels, LevelUnlicensed},
-		{CapThreadSummarization, LevelProfessional},
-		{CapChannelSummarization, LevelProfessional},
+		{CapThreadSummarization, LevelUnlicensed},
+		{CapChannelSummarization, LevelUnlicensed},
 		{CapProviderWebSearch, LevelProfessional},
 		{CapAgentAccessControls, LevelProfessional},
 		{CapTokenAccounting, LevelProfessional},
-		{CapMultipleLLMServices, LevelEnterprise},
+		{CapMultipleLLMServices, LevelUnlicensed},
 		{CapModelFallback, LevelEnterpriseAdvanced},
 		{CapStateChangingTools, LevelEnterprise},
 		{CapSovereignWebSearch, LevelEnterprise},
 		{CapToolApprovalPolicies, LevelEnterprise},
-		{CapRemoteMCP, LevelEnterprise},
-		{CapSemanticSearch, LevelEnterprise},
+		{CapRemoteMCP, LevelUnlicensed},
+		{CapSemanticSearch, LevelUnlicensed},
 		{CapMeetings, LevelEnterprise},
 		{CapMCPServiceAccount, LevelEnterprise},
 		{CapSharedPrompts, LevelEnterprise},
-		{CapChannelAutoReply, LevelEnterpriseAdvanced},
+		{CapChannelAutoReply, LevelUnlicensed},
 		{CapAttributeBasedAccess, LevelEnterpriseAdvanced},
 		{Capability("unknown_capability"), LevelEnterpriseAdvanced},
 	}
@@ -178,8 +186,8 @@ func TestLimitsPerLevel(t *testing.T) {
 		serviceLimit  int
 		servicesCappd bool
 	}{
-		{LevelUnlicensed, FreeAgentLimit, true, BaseServiceLimit, true},
-		{LevelProfessional, ProfessionalAgentLimit, true, BaseServiceLimit, true},
+		{LevelUnlicensed, 0, false, 0, false},
+		{LevelProfessional, 0, false, 0, false},
 		{LevelEnterprise, 0, false, 0, false},
 		{LevelEnterpriseAdvanced, 0, false, 0, false},
 	}
@@ -212,53 +220,9 @@ func TestLicenseErrorMessage(t *testing.T) {
 }
 
 func TestAgentLimitError(t *testing.T) {
-	tests := []struct {
-		name     string
-		level    Level
-		wantNil  bool
-		contains []string
-		required Level
-	}{
-		{
-			name:     "unlicensed names the free cap and Professional",
-			level:    LevelUnlicensed,
-			contains: []string{"1 AI agent;", "Professional"},
-			required: LevelProfessional,
-		},
-		{
-			name:     "professional names the professional cap and Enterprise",
-			level:    LevelProfessional,
-			contains: []string{"3 AI agents", "Enterprise"},
-			required: LevelEnterprise,
-		},
-		{
-			name:    "enterprise is uncapped",
-			level:   LevelEnterprise,
-			wantNil: true,
-		},
-		{
-			name:    "enterprise advanced is uncapped",
-			level:   LevelEnterpriseAdvanced,
-			wantNil: true,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			err := AgentLimitError(tc.level)
-			if tc.wantNil {
-				require.NoError(t, err)
-				return
-			}
-			require.Error(t, err)
-			for _, s := range tc.contains {
-				require.Contains(t, err.Error(), s)
-			}
-			require.True(t, errors.Is(err, ErrNotLicensed))
-			var licErr *LicenseError
-			require.True(t, errors.As(err, &licErr))
-			require.Equal(t, tc.required, licErr.RequiredLevel)
-			require.Equal(t, tc.level, licErr.CurrentLevel)
+	for _, level := range []Level{LevelUnlicensed, LevelProfessional, LevelEnterprise, LevelEnterpriseAdvanced} {
+		t.Run(level.String(), func(t *testing.T) {
+			require.NoError(t, AgentLimitError(level))
 		})
 	}
 }

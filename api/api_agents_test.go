@@ -632,7 +632,7 @@ func TestCreateAgentFreeTierAllowsFirstAgent(t *testing.T) {
 	require.Equal(t, http.StatusCreated, recorder.Result().StatusCode)
 }
 
-func TestCreateAgentFreeTierBlocksWhenQuotaReached(t *testing.T) {
+func TestCreateAgentFreeTierAllowsAdditionalAgents(t *testing.T) {
 	e := setupAgentTestEnvironment(t)
 	defer e.Cleanup(t)
 
@@ -640,16 +640,18 @@ func TestCreateAgentFreeTierBlocksWhenQuotaReached(t *testing.T) {
 	e.mockAPI.On("HasPermissionTo", testUserID, model.PermissionManageOwnAgent).Return(true)
 	e.mockAPI.On("LogError", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
-	// One existing agent is already at the free-tier quota.
+	// Creating another agent must succeed beyond the former one-agent limit.
 	e.agentStore.agents["existing"] = &llm.BotConfig{
 		ID: "existing", CreatorID: "someone-else", Name: "existing", DisplayName: "Existing", ServiceID: "svc-1",
 	}
 
+	e.mockAPI.On("CreateBot", mock.AnythingOfType("*model.Bot")).Return(&model.Bot{UserId: "new-bot-user-id", Username: "my-agent", DisplayName: "My Agent"}, nil)
+
 	recorder := doRequest(e.api, http.MethodPost, "/agents", createAgentBody(nil), testUserID)
-	require.Equal(t, http.StatusForbidden, recorder.Result().StatusCode)
+	require.Equal(t, http.StatusCreated, recorder.Result().StatusCode)
 }
 
-func TestListAgentsIncludesActiveCountHeaderWhenUnlicensed(t *testing.T) {
+func TestListAgentsFreeTierStillFiltersInaccessibleAgents(t *testing.T) {
 	e := setupAgentTestEnvironment(t)
 	defer e.Cleanup(t)
 
@@ -664,7 +666,7 @@ func TestListAgentsIncludesActiveCountHeaderWhenUnlicensed(t *testing.T) {
 	recorder := doRequest(e.api, http.MethodGet, "/agents", nil, testUserID)
 	resp := recorder.Result()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Equal(t, "1", resp.Header.Get(AgentActiveCountHeader))
+	assert.Empty(t, resp.Header.Get(AgentActiveCountHeader))
 
 	var agents []*llm.BotConfig
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&agents))
@@ -2585,20 +2587,28 @@ func TestAuditCreateAgent(t *testing.T) {
 			},
 		},
 		{
-			name: "free-tier quota denial records a 403 fail without request details",
+			name: "free-tier additional agent creation records success",
 			setup: func(e *TestEnvironment) {
 				mockUnlicensed(e.mockAPI)
 				e.mockAPI.On("HasPermissionTo", testUserID, model.PermissionManageOwnAgent).Return(true)
+				e.mockAPI.On("CreateBot", mock.AnythingOfType("*model.Bot")).Return(&model.Bot{
+					UserId: "bot-user-id-created", Username: "my-agent", DisplayName: "My Agent",
+				}, nil)
 				e.agentStore.agents["existing"] = &llm.BotConfig{
 					ID: "existing", CreatorID: "someone-else", Name: "existing", DisplayName: "Existing", ServiceID: "svc-1",
 				}
 			},
-			body:           createAgentBody(nil),
-			expectedStatus: http.StatusForbidden,
-			validateRecord: func(t *testing.T, _ *TestEnvironment, rec *model.AuditRecord) {
-				assert.Equal(t, model.AuditStatusFail, rec.Status)
-				assert.Equal(t, http.StatusForbidden, rec.Error.Code)
-				assert.NotContains(t, rec.EventData.Parameters, audit.KeyAgentName)
+			body:           createAgentBody(map[string]any{"customInstructions": plantedInstructions}),
+			expectedStatus: http.StatusCreated,
+			validateRecord: func(t *testing.T, e *TestEnvironment, rec *model.AuditRecord) {
+				assert.Equal(t, model.AuditStatusSuccess, rec.Status)
+				assert.Equal(t, "my-agent", rec.EventData.Parameters[audit.KeyAgentName])
+				assert.Equal(t, "svc-1", rec.EventData.Parameters["service_id"])
+				assert.Equal(t, "bot-user-id-created", rec.EventData.Parameters["bot_user_id"])
+				assert.Contains(t, e.agentStore.agents, rec.EventData.Parameters[audit.KeyAgentID])
+				raw, err := json.Marshal(rec)
+				require.NoError(t, err)
+				assert.NotContains(t, string(raw), plantedInstructions)
 			},
 		},
 	}

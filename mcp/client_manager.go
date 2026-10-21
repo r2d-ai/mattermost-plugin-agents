@@ -215,7 +215,7 @@ func (m *ClientManager) ReInit(config Config, embeddedServer EmbeddedMCPServer) 
 	m.syncPluginServersFromConfig(config)
 
 	if !m.remoteMCPAllowed() && mcpConfigHasRemoteOrPlugin(config) {
-		m.log.Info("Remote and plugin MCP servers are available at Enterprise and above; only the embedded Mattermost MCP server is connected")
+		m.log.Info("Remote and plugin MCP servers are unavailable under the capability policy; only the embedded Mattermost MCP server is connected")
 	}
 
 	var discarded []*Client

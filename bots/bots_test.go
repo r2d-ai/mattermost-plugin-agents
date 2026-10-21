@@ -781,7 +781,7 @@ func TestEnsureBots(t *testing.T) {
 			numCreatedBots:     1,
 		},
 		{
-			name: "multiple bots config with unlicensed server should limit to one",
+			name: "multiple bots config with unlicensed server uses every service",
 			cfgBots: []llm.BotConfig{
 				{
 					ID:          "test1",
@@ -810,7 +810,7 @@ func TestEnsureBots(t *testing.T) {
 			},
 			isMultiLLMLicensed: false,
 			expectError:        false,
-			numCreatedBots:     1,
+			numCreatedBots:     2,
 		},
 		{
 			name: "multiple bots config with licensed server should not limit",
@@ -1284,8 +1284,7 @@ func dbAgents(n int, serviceID string) []llm.BotConfig {
 
 // TestSnapshotBotsAndServicesDoesNotMutateConfigBots pins that
 // snapshotBotsAndServices treats config.GetBots() as read-only. Without the
-// clone, an unlicensed-server truncate-then-append overwrites the config's
-// backing array at index 1.
+// clone, appending DB-backed agents could overwrite the config-owned backing array.
 func TestSnapshotBotsAndServicesDoesNotMutateConfigBots(t *testing.T) {
 	mockAPI := &plugintest.API{}
 	client := pluginapi.NewClient(mockAPI, nil)

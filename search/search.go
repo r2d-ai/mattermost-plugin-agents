@@ -60,8 +60,8 @@ func New(
 }
 
 // Enabled returns true if the search service is enabled, functional, and
-// available at the current license level. Semantic AI search is available at
-// Enterprise and above; a nil checker fails closed.
+// available under the capability policy. Semantic search is available without
+// a license in this fork; a configured embedding search is still required.
 func (s *Search) Enabled() bool {
 	if s == nil || s.getSearch == nil || s.getSearch() == nil {
 		return false

@@ -47,31 +47,26 @@ export type Capability =
 // capabilityMinLevel is the tier chart: the minimum level at which each capability is available.
 const capabilityMinLevel: Record<Capability, LicenseLevel> = {
     multiplayer_channels: LicenseLevel.Unlicensed,
-    thread_summarization: LicenseLevel.Professional,
-    channel_summarization: LicenseLevel.Professional,
+    thread_summarization: LicenseLevel.Unlicensed,
+    channel_summarization: LicenseLevel.Unlicensed,
     provider_web_search: LicenseLevel.Professional,
     agent_access_controls: LicenseLevel.Professional,
     token_accounting: LicenseLevel.Professional,
 
-    multiple_llm_services: LicenseLevel.Enterprise,
+    multiple_llm_services: LicenseLevel.Unlicensed,
     state_changing_tools: LicenseLevel.Enterprise,
     sovereign_web_search: LicenseLevel.Enterprise,
     tool_approval_policies: LicenseLevel.Enterprise,
-    remote_mcp: LicenseLevel.Enterprise,
-    semantic_search: LicenseLevel.Enterprise,
+    remote_mcp: LicenseLevel.Unlicensed,
+    semantic_search: LicenseLevel.Unlicensed,
     meetings: LicenseLevel.Enterprise,
     mcp_service_account: LicenseLevel.Enterprise,
     shared_prompts: LicenseLevel.Enterprise,
 
-    channel_auto_reply: LicenseLevel.EnterpriseAdvanced,
+    channel_auto_reply: LicenseLevel.Unlicensed,
     attribute_based_access: LicenseLevel.EnterpriseAdvanced,
     model_fallback: LicenseLevel.EnterpriseAdvanced,
 };
-
-// Agent and LLM service caps per level; null means uncapped.
-const FREE_AGENT_LIMIT = 1;
-const PROFESSIONAL_AGENT_LIMIT = 3;
-const BASE_SERVICE_LIMIT = 1;
 
 // licenseLevelFromLicense mirrors enterprise.LevelFor. The Entry SKU maps to
 // Enterprise; unknown SKUs fall back to feature flags.
@@ -124,20 +119,6 @@ export const licenseAllows = (state: GlobalState, capability: Capability): boole
     return getLicenseLevel(state) >= requiredLevelFor(capability);
 };
 
-const agentLimitForLevel = (level: LicenseLevel): number | null => {
-    if (level >= LicenseLevel.Enterprise) {
-        return null;
-    }
-    if (level >= LicenseLevel.Professional) {
-        return PROFESSIONAL_AGENT_LIMIT;
-    }
-    return FREE_AGENT_LIMIT;
-};
-
-const serviceLimitForLevel = (level: LicenseLevel): number | null => {
-    return level >= LicenseLevel.Enterprise ? null : BASE_SERVICE_LIMIT;
-};
-
 export function useLicenseLevel(): LicenseLevel {
     return useSelector(getLicenseLevel);
 }
@@ -147,11 +128,13 @@ export function useIsLicensedFor(capability: Capability): boolean {
 }
 
 export function useAgentLimit(): number | null {
-    return agentLimitForLevel(useLicenseLevel());
+    // This fork does not cap agent counts at any license level.
+    return null;
 }
 
 export function useServiceLimit(): number | null {
-    return serviceLimitForLevel(useLicenseLevel());
+    // This fork does not cap LLM provider counts at any license level.
+    return null;
 }
 
 // useLicenseLevelName returns the localized name of a level for user-facing copy.

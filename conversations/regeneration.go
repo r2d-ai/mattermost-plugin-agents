@@ -241,9 +241,9 @@ func (c *Conversations) HandleRegenerate(ctx stdcontext.Context, userID string, 
 }
 
 // checkRegenerateLicense gates regenerating a post by the capability of the
-// operation that produced it. Thread summaries are available at Professional
-// and above, channel summaries at Professional and above, and transcription
-// summaries at Enterprise and above. Other conversation posts are not gated.
+// operation that produced it. Thread and channel summaries are available
+// without a license; transcription summaries retain their separate capability.
+// Other conversation posts are not gated.
 func (c *Conversations) checkRegenerateLicense(post *model.Post) error {
 	if post.GetProp(ReferencedRecordingFileID) != nil || post.GetProp(ReferencedTranscriptPostID) != nil {
 		return c.licenseChecker.Check(enterprise.CapMeetings)

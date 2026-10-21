@@ -26,20 +26,18 @@ func TestAgentCreateQuotaByLicense(t *testing.T) {
 		level      enterprise.Level
 		existing   int
 		configBots int
-		// onInactive agents reference the second configured service, which
-		// is inactive below Enterprise and so takes no slot in the cap.
-		onInactive  int
-		wantCreated bool
+		// onSecondService agents reference another configured provider.
+		onSecondService int
 	}{
-		{name: "unlicensed first agent", level: enterprise.LevelUnlicensed, existing: 0, wantCreated: true},
-		{name: "unlicensed with an agent on an inactive service", level: enterprise.LevelUnlicensed, onInactive: 1, wantCreated: true},
-		{name: "professional with agents on an inactive service", level: enterprise.LevelProfessional, existing: 2, onInactive: 2, wantCreated: true},
-		{name: "unlicensed at cap", level: enterprise.LevelUnlicensed, existing: 1, wantCreated: false},
-		{name: "unlicensed with a config bot", level: enterprise.LevelUnlicensed, configBots: 1, wantCreated: false},
-		{name: "professional under cap", level: enterprise.LevelProfessional, existing: 2, wantCreated: true},
-		{name: "professional at cap", level: enterprise.LevelProfessional, existing: 3, wantCreated: false},
-		{name: "enterprise uncapped", level: enterprise.LevelEnterprise, existing: 10, wantCreated: true},
-		{name: "enterprise advanced uncapped", level: enterprise.LevelEnterpriseAdvanced, existing: 10, wantCreated: true},
+		{name: "unlicensed first agent", level: enterprise.LevelUnlicensed, existing: 0},
+		{name: "unlicensed with an agent on a second service", level: enterprise.LevelUnlicensed, onSecondService: 1},
+		{name: "professional with agents on a second service", level: enterprise.LevelProfessional, existing: 2, onSecondService: 2},
+		{name: "unlicensed beyond former cap", level: enterprise.LevelUnlicensed, existing: 10},
+		{name: "unlicensed with a config bot", level: enterprise.LevelUnlicensed, configBots: 4},
+		{name: "professional under cap", level: enterprise.LevelProfessional, existing: 2},
+		{name: "professional beyond former cap", level: enterprise.LevelProfessional, existing: 10},
+		{name: "enterprise uncapped", level: enterprise.LevelEnterprise, existing: 10},
+		{name: "enterprise advanced uncapped", level: enterprise.LevelEnterpriseAdvanced, existing: 10},
 	}
 
 	for _, tc := range tests {
@@ -65,7 +63,7 @@ func TestAgentCreateQuotaByLicense(t *testing.T) {
 				}
 			}
 			addAgents(tc.existing, "svc-1")
-			addAgents(tc.onInactive, "svc-2")
+			addAgents(tc.onSecondService, "svc-2")
 			if tc.configBots > 0 {
 				for i := 0; i < tc.configBots; i++ {
 					store.cfg.Bots = append(store.cfg.Bots, llm.BotConfig{
@@ -75,15 +73,11 @@ func TestAgentCreateQuotaByLicense(t *testing.T) {
 			}
 
 			recorder := doRequest(e.api, http.MethodPost, "/agents", createAgentBody(nil), testUserID)
-			if tc.wantCreated {
-				require.Equal(t, http.StatusCreated, recorder.Result().StatusCode)
-				return
-			}
-			require.Equal(t, http.StatusForbidden, recorder.Result().StatusCode)
-			var body licenseErrorResponse
-			require.NoError(t, json.NewDecoder(recorder.Body).Decode(&body))
-			assert.Contains(t, body.Error, "AI agent")
-			assert.NotEmpty(t, body.LicenseRequired)
+			require.Equal(t, http.StatusCreated, recorder.Result().StatusCode)
+			var created llm.BotConfig
+			require.NoError(t, json.NewDecoder(recorder.Body).Decode(&created))
+			require.NotEmpty(t, created.ID)
+			require.Contains(t, e.agentStore.agents, created.ID)
 		})
 	}
 }
@@ -99,7 +93,7 @@ func TestCreateAgentLicenseGates(t *testing.T) {
 		{name: "access controls", fields: map[string]any{"channelAccessLevel": int(llm.ChannelAccessLevelAllow), "channelIDs": []string{"ch1"}}, minLevel: enterprise.LevelProfessional},
 		{name: "provider web search", fields: map[string]any{"enabledNativeTools": []string{llm.NativeToolWebSearch}}, minLevel: enterprise.LevelProfessional},
 		{name: "service-account auth", fields: map[string]any{"useServiceAccountAuth": true}, minLevel: enterprise.LevelEnterprise},
-		{name: "second LLM service", fields: map[string]any{"serviceID": "svc-2"}, minLevel: enterprise.LevelEnterprise},
+		{name: "second LLM service", fields: map[string]any{"serviceID": "svc-2"}, minLevel: enterprise.LevelUnlicensed},
 		{name: "attribute-based access", fields: map[string]any{"userAccessLevel": int(llm.UserAccessLevelAttributeBased)}, minLevel: enterprise.LevelEnterpriseAdvanced},
 	}
 
@@ -120,6 +114,10 @@ func TestCreateAgentLicenseGates(t *testing.T) {
 
 				recorder := doRequest(e.api, http.MethodPost, "/agents", createAgentBody(tc.fields), testUserID)
 				if level >= tc.minLevel {
+					if tc.minLevel == enterprise.LevelUnlicensed {
+						require.Equal(t, http.StatusCreated, recorder.Result().StatusCode)
+						return
+					}
 					// Attribute-based access also needs ABAC on the server, so
 					// a licensed save can still fail validation; it must not
 					// fail for licensing.
@@ -193,11 +191,7 @@ func TestListAgentsQuotaHeadersByLicense(t *testing.T) {
 
 			recorder := doRequest(e.api, http.MethodGet, "/agents", nil, testUserID)
 			require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
-			if _, capped := enterprise.AgentLimitFor(level); !capped {
-				assert.Empty(t, recorder.Result().Header.Get(AgentActiveCountHeader))
-				return
-			}
-			assert.Equal(t, "1", recorder.Result().Header.Get(AgentActiveCountHeader))
+			assert.Empty(t, recorder.Result().Header.Get(AgentActiveCountHeader), "agent creation is uncapped at every level")
 		})
 	}
 }
@@ -209,8 +203,8 @@ func TestListAgentsInactiveReason(t *testing.T) {
 		level enterprise.Level
 		want  map[string]string
 	}{
-		{level: enterprise.LevelUnlicensed, want: map[string]string{"oldest": "", "newer": "agent_limit", "second-service": "service_not_licensed", "deleted-service": "service_unavailable"}},
-		{level: enterprise.LevelProfessional, want: map[string]string{"oldest": "", "newer": "", "second-service": "service_not_licensed", "deleted-service": "service_unavailable"}},
+		{level: enterprise.LevelUnlicensed, want: map[string]string{"oldest": "", "newer": "", "second-service": "", "deleted-service": "service_unavailable"}},
+		{level: enterprise.LevelProfessional, want: map[string]string{"oldest": "", "newer": "", "second-service": "", "deleted-service": "service_unavailable"}},
 		{level: enterprise.LevelEnterprise, want: map[string]string{"oldest": "", "newer": "", "second-service": "", "deleted-service": "service_unavailable"}},
 		{level: enterprise.LevelEnterpriseAdvanced, want: map[string]string{"oldest": "", "newer": "", "second-service": "", "deleted-service": "service_unavailable"}},
 	}

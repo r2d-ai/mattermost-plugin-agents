@@ -28,8 +28,7 @@ import (
 )
 
 // setupChannelAutoReplyTest prepares a test environment with a registered bot
-// (the selectable target for PUT bodies), a real license checker at Enterprise
-// Advanced so enabling modes can be exercised, and a channel of the given type
+// (the selectable target for PUT bodies), a real unlicensed checker, and a channel of the given type
 // resolvable by the channelReadAuthorizationRequired middleware.
 func setupChannelAutoReplyTest(t *testing.T, channelType model.ChannelType) *TestEnvironment {
 	t.Helper()
@@ -39,7 +38,7 @@ func setupChannelAutoReplyTest(t *testing.T, channelType model.ChannelType) *Tes
 	e := SetupTestEnvironment(t)
 	e.setupTestBot(llm.BotConfig{Name: "permtest"})
 	e.api.licenseChecker = enterprise.NewLicenseChecker(e.client)
-	e.OverrideLicense(enterprisetest.LicenseFor(enterprise.LevelEnterpriseAdvanced))
+	e.OverrideLicense(nil)
 	e.mockAPI.On("GetChannel", "channelid").Return(&model.Channel{
 		Id:     "channelid",
 		Type:   channelType,
@@ -198,14 +197,15 @@ func TestPutChannelAutoReplyPermissionMatrix(t *testing.T) {
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			name:        "unlicensed server is forbidden",
+			name:        "unlicensed channel manager can enable auto-reply",
 			channelType: model.ChannelTypeOpen,
 			envSetup: func(e *TestEnvironment) {
 				e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
 				e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionManagePublicChannelProperties).Return(true).Maybe()
 				e.OverrideLicense(&model.License{})
 			},
-			expectedStatus: http.StatusForbidden,
+			expectedStatus: http.StatusOK,
+			expectPersist:  true,
 		},
 		{
 			name:        "no read permission is forbidden by middleware",
@@ -428,9 +428,8 @@ func TestChannelAutoReplyIndependentOfDefaultBot(t *testing.T) {
 	}
 }
 
-// TestPutChannelAutoReplyUnlicensed pins the license gate to the enabling
-// modes only: after a license downgrade an existing setting must remain
-// clearable (mode "off" deletes the row), while enabling stays forbidden.
+// TestPutChannelAutoReplyUnlicensed exercises enabling, updating, and clearing
+// auto-reply settings on a server without a license.
 func TestPutChannelAutoReplyUnlicensed(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -445,14 +444,14 @@ func TestPutChannelAutoReplyUnlicensed(t *testing.T) {
 			expectDeletes:  []string{"channelid"},
 		},
 		{
-			name:           "root_posts is forbidden without a license",
+			name:           "root_posts persists without a license",
 			body:           fmt.Sprintf(`{"bot_id":%q,"mode":"root_posts"}`, testBotUserID),
-			expectedStatus: http.StatusForbidden,
+			expectedStatus: http.StatusOK,
 		},
 		{
-			name:           "threads is forbidden without a license",
+			name:           "threads persists without a license",
 			body:           fmt.Sprintf(`{"bot_id":%q,"mode":"threads"}`, testBotUserID),
-			expectedStatus: http.StatusForbidden,
+			expectedStatus: http.StatusOK,
 		},
 	}
 
@@ -463,7 +462,7 @@ func TestPutChannelAutoReplyUnlicensed(t *testing.T) {
 			e.OverrideLicense(&model.License{})
 			e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionReadChannel).Return(true)
 			e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionManagePublicChannelProperties).Return(true)
-			// Simulate a setting written while the server was still licensed.
+			// Update or clear an existing auto-reply setting.
 			e.autoReplyStore.settings["channelid"] = &autoreply.Setting{
 				ChannelID: "channelid",
 				BotID:     testBotUserID,
@@ -475,8 +474,8 @@ func TestPutChannelAutoReplyUnlicensed(t *testing.T) {
 
 			require.Equal(t, tc.expectDeletes, e.autoReplyStore.deleteCalls)
 			if tc.expectDeletes == nil {
-				require.NotEmpty(t, e.autoReplyStore.settings, "a forbidden request must not delete the setting")
-				require.Empty(t, e.autoReplyStore.setCalls, "a forbidden request must not persist")
+				require.Contains(t, e.autoReplyStore.settings, "channelid")
+				require.Len(t, e.autoReplyStore.setCalls, 1)
 			} else {
 				require.NotContains(t, e.autoReplyStore.settings, "channelid")
 			}
@@ -496,12 +495,14 @@ func TestPutChannelAutoReplyByLevel(t *testing.T) {
 			e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionManagePublicChannelProperties).Return(true)
 
 			resp := e.doChannelAutoReplyRequest(t, http.MethodPut, enablingBody)
-			if level < enterprise.LevelEnterpriseAdvanced {
-				requireLicenseDenied(t, resp, enterprise.CapChannelAutoReply)
-				require.Empty(t, e.autoReplyStore.setCalls)
-				return
-			}
+
 			require.Equal(t, http.StatusOK, resp.StatusCode)
+			require.Len(t, e.autoReplyStore.setCalls, 1)
+			resp = e.doChannelAutoReplyRequest(t, http.MethodGet, "")
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			var saved ChannelAutoReply
+			require.NoError(t, json.NewDecoder(resp.Body).Decode(&saved))
+			require.Equal(t, ChannelAutoReply{BotID: testBotUserID, Mode: "root_posts"}, saved)
 		})
 	}
 
@@ -520,7 +521,7 @@ func TestPutChannelAutoReplyByLevel(t *testing.T) {
 		}
 	})
 
-	t.Run("nil checker fails closed for enabling", func(t *testing.T) {
+	t.Run("nil checker permits enabling", func(t *testing.T) {
 		e := setupChannelAutoReplyTest(t, model.ChannelTypeOpen)
 		defer e.Cleanup(t)
 		e.api.licenseChecker = nil
@@ -528,7 +529,8 @@ func TestPutChannelAutoReplyByLevel(t *testing.T) {
 		e.mockAPI.On("HasPermissionToChannel", "userid", "channelid", model.PermissionManagePublicChannelProperties).Return(true)
 
 		resp := e.doChannelAutoReplyRequest(t, http.MethodPut, enablingBody)
-		requireLicenseDenied(t, resp, enterprise.CapChannelAutoReply)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Len(t, e.autoReplyStore.setCalls, 1)
 	})
 }
 

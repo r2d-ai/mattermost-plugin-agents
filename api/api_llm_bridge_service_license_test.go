@@ -14,8 +14,8 @@ import (
 )
 
 // TestBridgeServiceEndpointsByLevel pins that bridge service listing and
-// completion address only the active LLM service below Enterprise, and follow
-// fallback chains only at Enterprise Advanced.
+// completion can use every configured provider at every level, while fallback
+// chains still require Enterprise Advanced.
 func TestBridgeServiceEndpointsByLevel(t *testing.T) {
 	primary := bridgeServiceConfig("svc-primary", "Primary", llm.ServiceTypeOpenAI, "gpt-4o")
 	primary.FallbackServiceID = "svc-second"
@@ -24,7 +24,7 @@ func TestBridgeServiceEndpointsByLevel(t *testing.T) {
 
 	levels := append([]*enterprise.Level{nil}, levelPointers()...)
 	for _, level := range levels {
-		name := "nil checker fails closed"
+		name := "nil checker allows all configured providers"
 		current := enterprise.LevelUnlicensed
 		if level != nil {
 			name = level.String()
@@ -37,7 +37,6 @@ func TestBridgeServiceEndpointsByLevel(t *testing.T) {
 			} else {
 				e.OverrideLicense(enterprisetest.LicenseFor(*level))
 			}
-			multiService := current >= enterprise.RequiredLevel(enterprise.CapMultipleLLMServices)
 			fallbacks := current >= enterprise.RequiredLevel(enterprise.CapModelFallback)
 
 			listed, err := client.GetServices("")
@@ -46,11 +45,7 @@ func TestBridgeServiceEndpointsByLevel(t *testing.T) {
 			for _, svc := range listed {
 				ids = append(ids, svc.ID)
 			}
-			if multiService {
-				require.ElementsMatch(t, []string{"svc-primary", "svc-second"}, ids)
-			} else {
-				require.Equal(t, []string{"svc-primary"}, ids)
-			}
+			require.ElementsMatch(t, []string{"svc-primary", "svc-second"}, ids)
 
 			request := bridgeclient.CompletionRequest{Posts: []bridgeclient.Post{{Role: "user", Message: "hi"}}}
 			_, err = client.ServiceCompletion("svc-primary", request)
@@ -65,12 +60,7 @@ func TestBridgeServiceEndpointsByLevel(t *testing.T) {
 			}
 
 			_, err = client.ServiceCompletion("svc-second", request)
-			if multiService {
-				require.NoError(t, err)
-				return
-			}
-			require.Error(t, err)
-			require.Contains(t, err.Error(), "Enterprise")
+			require.NoError(t, err)
 		})
 	}
 }

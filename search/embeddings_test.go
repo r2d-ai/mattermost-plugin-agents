@@ -59,14 +59,14 @@ func TestInitEmbeddingsSearch(t *testing.T) {
 			},
 		},
 		{
-			name: "missing license returns license error",
+			name: "missing license still requires a configured vector store",
 			cfg: embeddings.EmbeddingSearchConfig{
 				Type:       embeddings.SearchTypeComposite,
 				Dimensions: 1536,
 			},
 			licensed:      false,
 			expectError:   true,
-			errorContains: "available at Enterprise and above",
+			errorContains: "unsupported vector store type",
 		},
 		{
 			name: "zero dimensions returns dimension error",

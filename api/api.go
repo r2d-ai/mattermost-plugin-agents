@@ -391,8 +391,8 @@ func (a *API) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Reques
 	router.GET("/services", a.handleListServices)
 
 	// Raw search endpoint returns enriched semantic search results without LLM processing.
-	// Used by the MCP server for external search callbacks. Semantic search is
-	// available at Enterprise and above.
+	// Used by the MCP server for external search callbacks; the same capability
+	// policy applies to raw and conversational search.
 	router.POST("/search/raw", a.capabilityRequired(enterprise.CapSemanticSearch), a.handleRawSearch)
 
 	// Raw file content endpoint returns a ranged slice of a file's text after

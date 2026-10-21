@@ -793,9 +793,8 @@ func SetupTestEnvironment(t *testing.T) *TestEnvironment {
 	allowAnyPluginAPILogging(mockAPI)
 
 	// Mock GetConfig and GetLicense for WithLLMContextServerInfo and the
-	// context builder's remote-MCP license gate. Default to a licensed
-	// server so remote MCP tools are supplied; tests asserting unlicensed
-	// behavior override via OverrideLicense.
+	// context builder's capability checks. Default to a licensed server;
+	// tests asserting free capabilities or paid restrictions use OverrideLicense.
 	mockAPI.On("GetConfig").Return(&model.Config{}).Maybe()
 	mockAPI.On("GetLicense").Return(&model.License{SkuShortName: model.LicenseShortSkuEnterprise}).Maybe()
 

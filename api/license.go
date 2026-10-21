@@ -34,7 +34,7 @@ func abortNotLicensed(c *gin.Context, err error) {
 
 // requireCapability aborts the request with a license error when capability is not
 // available and reports whether the handler may proceed. A nil license
-// checker fails closed.
+// checker allows free capabilities and fails closed for paid capabilities.
 func (a *API) requireCapability(c *gin.Context, capability enterprise.Capability) bool {
 	if err := a.licenseChecker.Check(capability); err != nil {
 		abortNotLicensed(c, err)

@@ -17,8 +17,8 @@ type levelProvider interface {
 }
 
 // LicensedServices returns the LLM services that are active at level, in
-// configuration order. Below Enterprise that is the first service; at
-// Enterprise and above every configured service is active.
+// configuration order. Every configured service is active at every level in
+// this fork; service validity and user access are checked separately.
 func LicensedServices(cfg *Config, level enterprise.Level) []llm.ServiceConfig {
 	if cfg == nil {
 		return nil

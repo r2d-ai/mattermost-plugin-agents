@@ -170,7 +170,7 @@ func setupNoToolsAPI(t *testing.T, mcpProvider *noToolsTestMCPProvider, mmClient
 	require.NoError(t, err)
 
 	e.api.licenseChecker = enterprise.NewLicenseChecker(e.client)
-	e.OverrideLicense(&model.License{SkuShortName: "advanced"})
+	e.OverrideLicense(nil)
 	siteName := "Mattermost"
 	siteURL := "https://example.com"
 	e.OverrideConfig(&model.Config{

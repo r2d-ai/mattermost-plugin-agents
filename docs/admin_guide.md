@@ -303,7 +303,7 @@ To obtain Google Custom Search credentials:
 
 ### Embed search configuration
 
-To enable semantic search capabilities, you'll need to enable the `pgvector` extension in your PostgreSQL database, then configure embeddings provider settings including the provider (OpenAI, etc.), model for embeddings, and dimensions that match your chosen embedding model. Embedding search is available at Enterprise and above (see [license requirements](#license-requirements)) and is available as an [experimental](https://docs.mattermost.com/manage/feature-labels.html#experimental) feature. Performance may vary with large datasets.
+To enable semantic search capabilities, you'll need to enable the `pgvector` extension in your PostgreSQL database, then configure embeddings provider settings including the provider (OpenAI, etc.), model for embeddings, and dimensions that match your chosen embedding model. Embedding search is available without a license in this fork (see [license requirements](#license-requirements)) and is available as an [experimental](https://docs.mattermost.com/manage/feature-labels.html#experimental) feature. Performance may vary with large datasets.
 
 Embedding search is optional for Agents search from the search bar and `/ask-channel`: without it, agents search with keyword search; with it, they also get semantic results.
 
@@ -347,7 +347,7 @@ Notes on deferred reindex:
 
 Configure who can access AI features by setting team-level, channel-level, and user-level permissions for each agent.
 
-Per-channel agent auto-reply is governed by the channel-management permission (`manage_public_channel_properties` or `manage_private_channel_properties`, depending on the channel type), checked server-side on writes; channel members can read the current setting. The auto-reply endpoints do not depend on the workspace default agent: reads and writes work even when the default agent is restricted from the channel or user (or when no agents are configured at all), and writes validate the *selected* agent's channel access instead. Channel agent auto-reply is available at Enterprise Advanced; below that level the channel settings tab is hidden and any stored setting is inactive. Turning auto-reply off through the REST endpoint never requires a license, so an existing setting is always clearable. The channel settings tab UI requires Mattermost v11.10 or later; on older servers the tab is hidden, but the REST endpoint (`GET`/`PUT /plugins/mattermost-ai/channel/{channelid}/autoreply`) remains available.
+Per-channel agent auto-reply is governed by the channel-management permission (`manage_public_channel_properties` or `manage_private_channel_properties`, depending on the channel type), checked server-side on writes; channel members can read the current setting. The auto-reply endpoints do not depend on the workspace default agent: reads and writes work even when the default agent is restricted from the channel or user (or when no agents are configured at all), and writes validate the *selected* agent's channel access instead. Channel agent auto-reply is available without a license in this fork and must be configured separately for each public or private channel. The posting user's permissions and the selected agent's access restrictions still apply. The channel settings tab UI requires Mattermost v11.10 or later; on older servers the tab is hidden, but the REST endpoint (`GET`/`PUT /plugins/mattermost-ai/channel/{channelid}/autoreply`) remains available.
 
 ### Attribute-based access control (ABAC)
 
@@ -741,7 +741,7 @@ The Model Context Protocol (MCP) integration lets Agents use tools exposed by MC
 
 The MCP client and the embedded Mattermost MCP server are always enabled. Admins manage remote MCP servers and connection timeout from the MCP UI in the System Console. The **Tools** tab also shows plugin-registered MCP servers, where admins can enable or disable each plugin server and set per-tool enabled state and approval policies. Agent-level MCP access is configured separately on each agent's **MCPs** tab.
 
-Remote and external MCP servers are available at Enterprise and above (see [license requirements](#license-requirements)). Below that level, stored remote servers remain visible but cannot be added or enabled, and tools from remote servers are not made available to agents; the embedded Mattermost MCP tools remain available on all plans (read-only tools at every level, state-changing tools at Enterprise and above).
+Remote and external MCP servers are available without a license in this fork (see [license requirements](#license-requirements)). Administrators can add and enable servers, and agents can use their permitted tools with each user's own connection. Server enablement, agent tool allowlists, user authentication, and tool approvals still apply. The embedded Mattermost MCP tools remain available on all plans (read-only tools at every level, state-changing tools at Enterprise and above).
 
 ### Configuration
 
@@ -823,7 +823,7 @@ The agent setting is all-or-nothing:
 
 > **Warning:** Service account authentication flattens permissions on **external** MCP servers — **every user who can use the agent acts with the agent's shared access** there. Restrict who can use the agent on its **Access** tab, and prefer a dedicated service account (and MCP server entry) per integration, scoped to the minimum permissions the agent needs. External systems attribute the agent's actions to the service account, not to the Mattermost user who triggered them; to correlate, enable [token usage tracking](#token-usage-tracking), where each record carries the triggering user (`user_id`), the acting identity (`acting_user_id`), and the auth mode (`tool_auth_mode`). Mattermost and plugin tools still run with each requesting user's own permissions. Header values are stored in the plugin configuration and are visible to system admins, like the server's other credentials.
 
-Service account authentication is available at Enterprise and above, the same as remote and external MCP servers (see [license requirements](#license-requirements)). Below that level, the service account header configuration cannot be added and the agent setting doesn't change how tool calls authenticate.
+Service account authentication is available at Enterprise and above, separately from the remote MCP connectivity available without a license in this fork (see [license requirements](#license-requirements)). Below that level, the service account header configuration cannot be added and the agent setting doesn't change how tool calls authenticate; remote MCP connections use per-user credentials.
 
 ### MCP dynamic tool loading
 
@@ -1018,36 +1018,36 @@ You can authenticate using Mattermost Personal Access Tokens (PAT):
 
 The plugin distinguishes four license levels: Free (no license), Professional, Enterprise, and Enterprise Advanced. Each level includes everything available at the levels below it. The Entry license behaves as Enterprise. A development server (`EnableDeveloper` and `EnableTesting` both on) exercises every capability.
 
-In this fork, agents can respond to `@mentions` in public channels, private channels, and group messages without a license. The **loop in** action is also available in public and private channel threads. Existing user and channel access restrictions still apply, and responses keep the existing thread behavior. Channel auto-reply without a mention and state-changing tools retain their separate requirements below.
+In this fork, every license level, including Team/Free with no license, supports unlimited agents and LLM services, channel `@mentions`, thread and channel summaries, remote MCP servers, semantic search, and channel auto-reply. The **loop in** action is also available in public and private channel threads. Existing user and channel permissions, agent access restrictions, tool authentication, and approval checks still apply. Configure providers, MCP connections, embedding search, and per-channel auto-reply before using those features; removing the license requirement does not enable them automatically.
 
 | | Free | Professional | Enterprise | Ent. Advanced |
 |---|---|---|---|---|
-| AI agents | 1 | 3 | unlimited | unlimited |
-| Bring your own LLM, incl. local models | ✅ 1 provider | ✅ 1 provider | ✅ multi | ✅ multi + fallback |
+| AI agents | unlimited | unlimited | unlimited | unlimited |
+| Bring your own LLM, incl. local models | ✅ multi | ✅ multi | ✅ multi | ✅ multi + fallback |
 | Vision / document understanding | ✅ | ✅ | ✅ | ✅ |
 | Personal custom prompts | ✅ | ✅ | ✅ | ✅ |
 | Built-in Mattermost tools | read-only | read-only | read + write | read + write |
 | Agent direct messages | ✅ | ✅ | ✅ | ✅ |
 | Multiplayer agents in channels | ✅ | ✅ | ✅ | ✅ |
-| Thread summarization | — | ✅ | ✅ | ✅ |
-| Channel & unread summarization | — | ✅ | ✅ | ✅ |
+| Thread summarization | ✅ | ✅ | ✅ | ✅ |
+| Channel & unread summarization | ✅ | ✅ | ✅ | ✅ |
 | Provider-native web search | — | ✅ | ✅ | ✅ |
 | Agent access controls (users / teams / channels) | — | ✅ | ✅ | ✅ |
 | Token accounting | — | ✅ | ✅ | ✅ |
 | Sovereign web search | — | — | ✅ | ✅ |
 | Tool approval policies | — | — | ✅ | ✅ |
-| Remote & external MCP servers | — | — | ✅ | ✅ |
-| Semantic AI search | — | — | ✅ | ✅ |
+| Remote & external MCP servers | ✅ | ✅ | ✅ | ✅ |
+| Semantic AI search | ✅ | ✅ | ✅ | ✅ |
 | Meeting transcription & summaries | — | — | ✅ | ✅ |
 | MCP service-account authentication | — | — | ✅ | ✅ |
 | Shared prompt libraries | — | — | ✅ | ✅ |
-| Channel agent auto-reply | — | — | — | ✅ |
+| Channel agent auto-reply | ✅ | ✅ | ✅ | ✅ |
 | Attribute-based access control for AI | — | — | — | ✅ |
 
 How each row is enforced:
 
-- **AI agents** counts configuration-file bots and user-created agents together as one pool. When a workspace holds more agents than its level allows, the plugin activates configuration-file bots first (in configuration order), then user-created agents (oldest first), up to the cap. Remaining agents stay stored but inactive; they are named in the server log and marked **Inactive** on the Agents page, with the reason. Creating an agent beyond the cap returns a licensing error that names the level that raises the cap.
-- **Bring your own LLM** — Free and Professional workspaces use one LLM service: the first service in the **Services** list. Agents that reference another service are inactive at those levels and take no slot in the agent cap; they are named in the server log and marked **Inactive** on the Agents page. LLM Bridge service calls address only that service. Enterprise and above route agents and LLM Bridge calls to any configured service. Fallback chains are followed at Enterprise Advanced; at lower levels a configured fallback stays stored but requests use the primary service only.
+- **AI agents** — Configuration-file bots and user-created agents have no license-based count limit. Creating and managing agents still requires the corresponding Mattermost permissions. Agents with missing or incomplete service configuration remain inactive until their configuration is repaired.
+- **Bring your own LLM** — All configured LLM services are eligible at every license level. Agents and LLM Bridge calls can use any configured service they are authorized to use; services are not truncated to the first entry. Fallback chains are followed at Enterprise Advanced; at lower levels a configured fallback stays stored but requests use the primary service only.
 - **Built-in Mattermost tools** — read-only tools (retrieving messages, channels, users, teams, files and search results) are available at every level. Tools that change state in Mattermost (posting, reacting, editing, creating or modifying channels, bookmarks, scheduled posts and similar) are available at Enterprise and above; below that they are absent from the tool list and calls to them return a licensing message.
 - **Tool approval policies** — admin-configured per-tool execution policies apply at Enterprise and above. Below that, embedded Mattermost tools use the product defaults and every other tool asks before running; a policy an administrator set to be narrower than the default (for example, ask) still applies. A tool that an administrator has disabled stays disabled at every level.
 - **Shared prompt libraries** — personal prompts are available at every level. Publishing a prompt to other users, and discovering or using prompts published by others, is available at Enterprise and above.

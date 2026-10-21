@@ -208,7 +208,7 @@ func matchPreviousMMBots(bots []*Bot, previousMMBots []*model.Bot) map[*Bot]*mod
 }
 
 // snapshotBotsAndServices returns the full bot lineup (file-config bots plus
-// DB-backed agents, license cap applied) and the services they reference.
+// DB-backed agents, excluding invalid configurations) and the services they reference.
 // EnsureBots calls this for both the optimistic equality check and the
 // rebuild, so the check can't miss a service used only by a DB agent.
 func (b *MMBots) snapshotBotsAndServices() ([]llm.BotConfig, dbAgentBotSet, map[string]llm.ServiceConfig, error) {
@@ -271,7 +271,7 @@ func (b *MMBots) selectActiveBots(pool []llm.BotConfig, dbNames map[string]struc
 		}
 		if names := inactive[config.AgentInactiveServiceNotLicensed]; len(names) > 0 {
 			b.pluginAPI.Log.Warn(
-				"Agents referencing LLM services other than the first configured service are inactive; multiple LLM services are available at Enterprise and above",
+				"AI agents referencing inactive LLM services are inactive",
 				"inactive_agents", strings.Join(names, ", "),
 				"license_level", level.String(),
 			)

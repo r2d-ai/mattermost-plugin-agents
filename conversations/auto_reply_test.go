@@ -98,6 +98,11 @@ func autoReplySecondBotConfig() llm.BotConfig {
 // LLM), a licensed server, and a fake auto-reply settings lookup wired in.
 func setupAutoReplyTestEnv(t *testing.T, botConfigs []llm.BotConfig, llmResponses ...*llm.TextStreamResult) *autoReplyTestEnv {
 	t.Helper()
+	return setupAutoReplyTestEnvWithChecker(t, botConfigs, false, llmResponses...)
+}
+
+func setupAutoReplyTestEnvWithChecker(t *testing.T, botConfigs []llm.BotConfig, nilChecker bool, llmResponses ...*llm.TextStreamResult) *autoReplyTestEnv {
+	t.Helper()
 
 	mockAPI := &plugintest.API{}
 	mockAPI.On("GetConfig").Return(&model.Config{}).Maybe()
@@ -115,6 +120,9 @@ func setupAutoReplyTestEnv(t *testing.T, botConfigs []llm.BotConfig, llmResponse
 	}
 	pluginClient := pluginapi.NewClient(mockAPI, nil)
 	licenseChecker := enterprise.NewLicenseChecker(pluginClient)
+	if nilChecker {
+		licenseChecker = nil
+	}
 
 	botService := bots.New(mockAPI, pluginClient, licenseChecker, nil, nil, newPassthroughAccessChecker(), &http.Client{}, nil)
 	fLLM := newDMTestLLM(llmResponses...)
@@ -488,7 +496,7 @@ func TestAutoReplyTriggerMatrix(t *testing.T) {
 }
 
 // TestAutoReplyTriggerRechecks covers the trigger-time re-checks: every stale
-// or unlicensed condition must decline quietly — no reply, no conversation, and
+// or unauthorized condition must decline quietly — no reply, no conversation, and
 // nothing logged at error level (MessageHasBeenPosted swallows ErrNoResponse at
 // debug level). Declining still falls through to the mention reminder, which
 // applies its own guards; @mentioning an agent works even unlicensed.
@@ -497,42 +505,13 @@ func TestAutoReplyTriggerRechecks(t *testing.T) {
 		name           string
 		botConfig      llm.BotConfig
 		setting        autoreply.Setting
-		license        *model.License // non-nil overrides the default Enterprise license
 		buildPost      func(env *autoReplyTestEnv) *model.Post
 		expectReminder bool
 	}{
 		{
-			name:      "unlicensed server does not fire",
+			name:      "root-post mode keeps the mention reminder for thread replies",
 			botConfig: autoReplyBotConfig(),
-			setting:   autoreply.Setting{ChannelID: autoReplyChannelID, BotID: autoReplyBotUserID, Mode: autoreply.ModeThreads},
-			license:   &model.License{},
-			buildPost: func(env *autoReplyTestEnv) *model.Post {
-				return env.rootPost(autoReplyUserID, "hello there")
-			},
-		},
-		{
-			name:      "professional license does not fire auto-reply",
-			botConfig: autoReplyBotConfig(),
-			setting:   autoreply.Setting{ChannelID: autoReplyChannelID, BotID: autoReplyBotUserID, Mode: autoreply.ModeThreads},
-			license:   &model.License{SkuShortName: model.LicenseShortSkuProfessional},
-			buildPost: func(env *autoReplyTestEnv) *model.Post {
-				return env.rootPost(autoReplyUserID, "hello there")
-			},
-		},
-		{
-			name:      "enterprise license does not fire auto-reply",
-			botConfig: autoReplyBotConfig(),
-			setting:   autoreply.Setting{ChannelID: autoReplyChannelID, BotID: autoReplyBotUserID, Mode: autoreply.ModeThreads},
-			license:   &model.License{SkuShortName: model.LicenseShortSkuEnterprise},
-			buildPost: func(env *autoReplyTestEnv) *model.Post {
-				return env.rootPost(autoReplyUserID, "hello there")
-			},
-		},
-		{
-			name:      "server without auto-reply still reminds a thread reply after an agent post",
-			botConfig: autoReplyBotConfig(),
-			setting:   autoreply.Setting{ChannelID: autoReplyChannelID, BotID: autoReplyBotUserID, Mode: autoreply.ModeThreads},
-			license:   &model.License{SkuShortName: model.LicenseShortSkuProfessional},
+			setting:   autoreply.Setting{ChannelID: autoReplyChannelID, BotID: autoReplyBotUserID, Mode: autoreply.ModeRootPosts},
 			buildPost: func(env *autoReplyTestEnv) *model.Post {
 				return env.threadReply(autoReplyUserID, "thanks!", true)
 			},
@@ -605,9 +584,7 @@ func TestAutoReplyTriggerRechecks(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			env := setupAutoReplyTestEnv(t, []llm.BotConfig{tc.botConfig}, dmMakeTextStream("canned reply"))
 			env.settings.set(tc.setting)
-			if tc.license != nil {
-				env.overrideLicense(tc.license)
-			}
+			env.overrideLicense(nil)
 
 			post := tc.buildPost(env)
 			env.conversations.MessageHasBeenPosted(nil, post)
@@ -715,29 +692,24 @@ func TestAutoReplyLicenseGate(t *testing.T) {
 
 			env.conversations.MessageHasBeenPosted(nil, env.rootPost(autoReplyUserID, "hello there"))
 
-			if level >= enterprise.LevelEnterpriseAdvanced {
-				require.NotEmpty(t, env.mmClient.createdPosts, "channel agent auto-reply is available at Enterprise Advanced and above")
-				return
-			}
-
-			require.Empty(t, env.mmClient.createdPosts, "channel agent auto-reply is available at Enterprise Advanced and above")
-			require.Empty(t, allConversations(env.convStore))
+			require.Len(t, env.mmClient.createdPosts, 1, "auto-reply must work without an @mention at every tier")
+			require.Len(t, allConversations(env.convStore), 1)
+			env.fakeLLM.mu.Lock()
+			require.Len(t, env.fakeLLM.requests, 1)
+			env.fakeLLM.mu.Unlock()
 		})
 	}
 
-	t.Run("nil checker fails closed", func(t *testing.T) {
-		env := setupAutoReplyTestEnv(t, []llm.BotConfig{autoReplyBotConfig()}, dmMakeTextStream("canned reply"))
+	t.Run("nil checker keeps auto-reply available", func(t *testing.T) {
+		env := setupAutoReplyTestEnvWithChecker(t, []llm.BotConfig{autoReplyBotConfig()}, true, dmMakeTextStream("canned reply"))
 		env.settings.set(autoreply.Setting{
 			ChannelID: autoReplyChannelID,
 			BotID:     autoReplyBotUserID,
 			Mode:      autoreply.ModeThreads,
 		})
-		nilConv := conversations.New(nil, env.mmClient, nil, nil, env.botService, nil, nil, nil, nil, nil)
-		nilConv.SetAutoReplySettings(env.settings)
-
-		nilConv.MessageHasBeenPosted(nil, env.rootPost(autoReplyUserID, "hello there"))
-
-		require.Empty(t, env.mmClient.createdPosts)
-		require.Empty(t, allConversations(env.convStore))
+		env.overrideLicense(nil)
+		env.conversations.MessageHasBeenPosted(nil, env.rootPost(autoReplyUserID, "hello there"))
+		require.Len(t, env.mmClient.createdPosts, 1)
+		require.Len(t, allConversations(env.convStore), 1)
 	})
 }

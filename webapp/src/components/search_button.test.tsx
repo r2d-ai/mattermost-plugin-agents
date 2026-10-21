@@ -3,33 +3,27 @@
 
 import React from 'react';
 import {render, screen} from '@testing-library/react';
+import {Provider} from 'react-redux';
+import {createStore} from 'redux';
 
 import SearchButton from './search_button';
-
-jest.mock('@/license', () => ({
-    useIsLicensedFor: jest.fn(() => true),
-}));
 
 jest.mock('./assets/icon_ai', () => ({
     __esModule: true,
     default: () => <span>{'ai-icon'}</span>,
 }));
 
-describe('SearchButton license gating', () => {
-    const {useIsLicensedFor} = jest.requireMock('@/license') as {useIsLicensedFor: jest.Mock};
-
-    beforeEach(() => {
-        useIsLicensedFor.mockReturnValue(true);
-    });
-
-    test('shows the search entry at Enterprise', () => {
-        render(<SearchButton/>);
+describe('SearchButton availability', () => {
+    test.each(['', 'professional', 'enterprise'])('shows the semantic search entry for SKU "%s"', (sku) => {
+        const store = createStore(() => ({
+            entities: {
+                general: {
+                    config: {EnableTesting: 'false', EnableDeveloper: 'false'},
+                    license: {SkuShortName: sku},
+                },
+            },
+        }));
+        render(<Provider store={store}><SearchButton/></Provider>);
         expect(screen.getByText('Agents')).not.toBeNull();
-    });
-
-    test('hides the search entry below Enterprise', () => {
-        useIsLicensedFor.mockReturnValue(false);
-        render(<SearchButton/>);
-        expect(screen.queryByText('Agents')).toBeNull();
     });
 });

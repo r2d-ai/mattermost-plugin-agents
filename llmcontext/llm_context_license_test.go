@@ -98,10 +98,9 @@ func licenseTestMCPProvider() *selectionHonoringMCPProvider {
 	}}
 }
 
-// TestUnlicensedBuilderDropsRemoteMCPTools pins the supply-time license gate:
-// remote and plugin MCP tools are available at Enterprise and above, while
-// built-in and embedded Mattermost MCP tools are available at every level.
-func TestUnlicensedBuilderDropsRemoteMCPTools(t *testing.T) {
+// Remote and plugin MCP tools must reach the model at every license level,
+// alongside built-in and embedded Mattermost tools.
+func TestBuilderIncludesRemoteMCPToolsAtEveryLicenseLevel(t *testing.T) {
 	for _, level := range enterprisetest.AllLevels {
 		t.Run(level.String(), func(t *testing.T) {
 			builder := newLicenseTestBuilderAt(t, level,
@@ -117,15 +116,12 @@ func TestUnlicensedBuilderDropsRemoteMCPTools(t *testing.T) {
 
 			context := buildToolsContext(builder, bot)
 
-			want := []string{"builtin", "mattermost__read_channel"}
-			if level >= enterprise.LevelEnterprise {
-				want = append(want, "jira__get_issue", "playbooks__run")
-			}
+			want := []string{"builtin", "mattermost__read_channel", "jira__get_issue", "playbooks__run"}
 			require.ElementsMatch(t, want, toolNames(context.Tools))
 		})
 	}
 
-	t.Run("nil checker fails closed", func(t *testing.T) {
+	t.Run("nil checker uses free capabilities", func(t *testing.T) {
 		builder := newLicenseTestBuilderAt(t, enterprise.LevelEnterpriseAdvanced,
 			&staticToolProvider{tools: []llm.Tool{testBuiltinTool("builtin")}},
 			licenseTestMCPProvider(),
@@ -139,27 +135,15 @@ func TestUnlicensedBuilderDropsRemoteMCPTools(t *testing.T) {
 		})
 
 		context := buildToolsContext(builder, bot)
-		require.ElementsMatch(t, []string{"builtin", "mattermost__read_channel"}, toolNames(context.Tools))
+		require.ElementsMatch(t, []string{"builtin", "mattermost__read_channel", "jira__get_issue", "playbooks__run"}, toolNames(context.Tools))
 	})
 }
 
-// TestUnlicensedBuilderDropsRemoteMCPToolsFromDynamicRegistry pins that the
-// dynamic tool loading registry is filtered too: on an unlicensed server the
-// model can neither discover a remote tool via search_tools nor load it via
-// load_tool.
-func TestUnlicensedBuilderDropsRemoteMCPToolsFromDynamicRegistry(t *testing.T) {
-	tests := []struct {
-		name           string
-		licensed       bool
-		wantRemoteInfo bool
-	}{
-		{name: "unlicensed registry excludes remote tools", licensed: false, wantRemoteInfo: false},
-		{name: "licensed registry includes remote tools", licensed: true, wantRemoteInfo: true},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			builder := newLicenseTestBuilder(t, tc.licensed,
+// Dynamic tool loading must also expose remote tools without a license.
+func TestBuilderIncludesRemoteMCPToolsInDynamicRegistryAtEveryLicenseLevel(t *testing.T) {
+	for _, level := range enterprisetest.AllLevels {
+		t.Run(level.String(), func(t *testing.T) {
+			builder := newLicenseTestBuilderAt(t, level,
 				&staticToolProvider{tools: []llm.Tool{testBuiltinTool("builtin")}},
 				licenseTestMCPProvider(),
 			)
@@ -173,17 +157,13 @@ func TestUnlicensedBuilderDropsRemoteMCPToolsFromDynamicRegistry(t *testing.T) {
 
 			context := buildToolsContext(builder, bot)
 
-			require.Equal(t, tc.wantRemoteInfo, context.Tools.IsUnloadedMCPTool("jira__get_issue"),
+			require.True(t, context.Tools.IsUnloadedMCPTool("jira__get_issue"),
 				"remote tool availability in the dynamic loading registry")
 			require.True(t, context.Tools.IsUnloadedMCPTool("mattermost__read_channel"),
 				"embedded tool must stay available in the dynamic loading registry")
 
 			searchResults := searchToolNames(t, context.Tools, "issue")
-			if tc.wantRemoteInfo {
-				require.Contains(t, searchResults, "jira__get_issue")
-			} else {
-				require.NotContains(t, searchResults, "jira__get_issue")
-			}
+			require.Contains(t, searchResults, "jira__get_issue")
 		})
 	}
 }
@@ -227,7 +207,7 @@ func TestServiceAccountCatalogLicenseGate(t *testing.T) {
 
 			require.Equal(t, []string{"user-id"}, provider.userCalls)
 			require.Empty(t, provider.saCalls)
-			require.ElementsMatch(t, []string{"builtin", "mattermost__read_channel"}, toolNames(context.Tools))
+			require.ElementsMatch(t, []string{"builtin", "mattermost__read_channel", "jira__get_issue"}, toolNames(context.Tools))
 			require.Empty(t, context.ToolAuthMode)
 		})
 	}
@@ -257,21 +237,11 @@ func TestServiceAccountCatalogLicenseGate(t *testing.T) {
 	})
 }
 
-// TestUnlicensedBuilderDropsRemoteMCPAuthErrors pins that OAuth prompts for
-// remote servers are not surfaced when their tools cannot be used without a
-// license.
-func TestUnlicensedBuilderDropsRemoteMCPAuthErrors(t *testing.T) {
-	tests := []struct {
-		name           string
-		licensed       bool
-		wantAuthErrors int
-	}{
-		{name: "unlicensed drops remote auth errors", licensed: false, wantAuthErrors: 0},
-		{name: "licensed keeps remote auth errors", licensed: true, wantAuthErrors: 1},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+// Users without a license must still receive the OAuth prompts needed to
+// connect their own accounts to remote MCP servers.
+func TestBuilderKeepsRemoteMCPAuthErrorsAtEveryLicenseLevel(t *testing.T) {
+	for _, level := range enterprisetest.AllLevels {
+		t.Run(level.String(), func(t *testing.T) {
 			mcpProvider := licenseTestMCPProvider()
 			mcpProvider.errors = &mcp.Errors{
 				ToolAuthErrors: []llm.ToolAuthError{{
@@ -280,7 +250,7 @@ func TestUnlicensedBuilderDropsRemoteMCPAuthErrors(t *testing.T) {
 					AuthURL:      "https://jira.example.com/oauth",
 				}},
 			}
-			builder := newLicenseTestBuilder(t, tc.licensed,
+			builder := newLicenseTestBuilderAt(t, level,
 				&staticToolProvider{tools: []llm.Tool{testBuiltinTool("builtin")}},
 				mcpProvider,
 			)
@@ -293,7 +263,7 @@ func TestUnlicensedBuilderDropsRemoteMCPAuthErrors(t *testing.T) {
 
 			context := buildToolsContext(builder, bot)
 
-			require.Len(t, context.Tools.GetAuthErrors(), tc.wantAuthErrors)
+			require.Equal(t, mcpProvider.errors.ToolAuthErrors, context.Tools.GetAuthErrors())
 		})
 	}
 }

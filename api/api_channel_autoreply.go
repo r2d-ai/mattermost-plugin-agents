@@ -38,9 +38,8 @@ type ChannelAutoReply struct {
 
 // handleGetChannelAutoReply returns the channel's auto-reply setting. Readable
 // by any channel member (PermissionReadChannel is enforced by the router
-// middleware). GET is not license-gated so the current state is always
-// readable; writing root_posts/threads is available at Enterprise Advanced
-// and above.
+// middleware). Reading and writing settings are available without a license;
+// writes additionally require the channel-management permission.
 func (a *API) handleGetChannelAutoReply(c *gin.Context) {
 	channel := c.MustGet(ContextChannelKey).(*model.Channel)
 
@@ -58,8 +57,8 @@ func (a *API) handleGetChannelAutoReply(c *gin.Context) {
 
 // handlePutChannelAutoReply updates the channel's auto-reply setting. Requires
 // the channel-management permission matching the channel type; DM/GM channels
-// are rejected. Enabling (root_posts/threads) is available at Enterprise
-// Advanced and above; mode "off" deletes the row and is never license-gated.
+// are rejected. Enabling (root_posts/threads) is available without a license;
+// mode "off" deletes the row.
 // The requested setting itself is validated by the auto-reply service, whose
 // ErrValidation failures become 400s. On success the new state is published as
 // a channel-scoped websocket event and echoed back.

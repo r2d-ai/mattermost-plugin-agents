@@ -4,6 +4,8 @@
 import React from 'react';
 import {render, screen} from '@testing-library/react';
 import {IntlProvider} from 'react-intl';
+import {Provider} from 'react-redux';
+import {createStore} from 'redux';
 
 import UnreadsSumarize from './unreads_summarize';
 
@@ -17,10 +19,6 @@ jest.mock('react-intl', () => {
         FormattedMessage: ({defaultMessage}: {defaultMessage: string}) => defaultMessage,
     };
 });
-
-jest.mock('@/license', () => ({
-    useIsLicensedFor: jest.fn(() => true),
-}));
 
 jest.mock('@/hooks', () => ({
     useSelectPost: () => jest.fn(),
@@ -50,42 +48,30 @@ jest.mock('./bot_selector', () => ({
     DropdownBotSelector: () => <div>{'bot-selector'}</div>,
 }));
 
-describe('UnreadsSumarize license gating', () => {
-    const {useIsLicensedFor} = jest.requireMock('@/license') as {useIsLicensedFor: jest.Mock};
-
-    beforeEach(() => {
-        useIsLicensedFor.mockReturnValue(true);
-    });
-
-    test('shows channel summarization actions at Professional', () => {
+describe('UnreadsSumarize availability', () => {
+    test.each(['', 'professional'])('shows channel summary actions for SKU "%s"', (sku) => {
+        const store = createStore(() => ({
+            entities: {
+                general: {
+                    config: {EnableTesting: 'false', EnableDeveloper: 'false'},
+                    license: {SkuShortName: sku},
+                },
+            },
+        }));
         render(
-            <IntlProvider locale='en'>
-                <UnreadsSumarize
-                    lastViewedAt={1}
-                    channelId='chan1'
-                    threadId=''
-                />
-            </IntlProvider>,
+            <Provider store={store}>
+                <IntlProvider locale='en'>
+                    <UnreadsSumarize
+                        lastViewedAt={1}
+                        channelId='chan1'
+                        threadId=''
+                    />
+                </IntlProvider>
+            </Provider>,
         );
 
         expect(screen.getByText('Summarize new messages')).not.toBeNull();
         expect(screen.getByText('Find action items')).not.toBeNull();
         expect(screen.getByText('Find open questions')).not.toBeNull();
-    });
-
-    test('hides the unreads entry point below Professional', () => {
-        useIsLicensedFor.mockReturnValue(false);
-        render(
-            <IntlProvider locale='en'>
-                <UnreadsSumarize
-                    lastViewedAt={1}
-                    channelId='chan1'
-                    threadId=''
-                />
-            </IntlProvider>,
-        );
-
-        expect(screen.queryByText('Summarize new messages')).toBeNull();
-        expect(screen.queryByTestId('unreads-menu')).toBeNull();
     });
 });
