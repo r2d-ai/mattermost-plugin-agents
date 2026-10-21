@@ -1,0 +1,142 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing published release tag to build (for example, v2.10.1-r2d.1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      MM_DEBUG: ''
+      MM_SERVICESETTINGS_ENABLEDEVELOPER: ''
+    steps:
+      - name: Validate release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo '::error::Use a vMAJOR.MINOR.PATCH tag, optionally with prerelease or build metadata.'
+            exit 1
+          fi
+          release="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")"
+          if [[ "$(jq -r '.immutable // false' <<< "$release")" == true ]]; then
+            echo '::error::Published immutable releases cannot accept new assets. Attach assets before publishing.'
+            exit 1
+          fi
+
+      - uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ github.event.release.tag_name || inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: webapp/package-lock.json
+
+      - name: Install webapp dependencies
+        run: npm ci --prefix webapp
+
+      - name: Build all supported platforms
+        run: |
+          # Pin the manifest version even when several tags point at this commit.
+          # Keep these targets serial: bundle must run after the server and webapp.
+          make manifest-check dist \
+            BUILD_TAG_CURRENT="$RELEASE_TAG" \
+            BUILD_TAG_LATEST="$RELEASE_TAG"
+
+      - name: Verify installable bundle
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import tarfile
+
+          source = json.loads(Path('plugin.json').read_text())
+          version = os.environ['RELEASE_TAG'][1:]
+          bundle = Path('dist') / f"{source['id']}-{version}.tar.gz"
+          with tarfile.open(bundle, 'r:gz') as archive:
+              root = source['id']
+              manifest = json.load(archive.extractfile(f'{root}/plugin.json'))
+              if manifest['id'] != root or manifest['version'] != version:
+                  raise SystemExit('Bundle identity/version does not match the release tag')
+              if manifest['server']['executables'] != source['server']['executables']:
+                  raise SystemExit('Bundle does not declare all supported platforms')
+              paths = list(manifest['server']['executables'].values())
+              paths.append(manifest['webapp']['bundle_path'])
+              for path in paths:
+                  member = archive.getmember(f'{root}/{path}')
+                  if not member.isfile() or member.size == 0:
+                      raise SystemExit(f'Missing or empty bundle file: {path}')
+              for platform, path in manifest['server']['executables'].items():
+                  if not platform.startswith('windows-') and not archive.getmember(f'{root}/{path}').mode & 0o111:
+                      raise SystemExit(f'Binary is not executable: {path}')
+          print(f'Verified {bundle}: version {version}, all server platforms, and webapp')
+          PY
+
+      - name: Generate checksums
+        working-directory: dist
+        run: |
+          sha256sum *.tar.gz > SHA256SUMS
+          sha256sum --check SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-bundle
+          path: |
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+  upload:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-bundle
+          path: dist
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          sha256sum --check SHA256SUMS
+          gh release upload "$RELEASE_TAG" ./*.tar.gz SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" --clobber

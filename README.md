@@ -1,6 +1,6 @@
 <div align="center">
 
-# Mattermost Agents Plugin [![Download Latest Master Build](https://img.shields.io/badge/Download-Latest%20Master%20Build-blue)](https://github.com/mattermost/mattermost-plugin-agents/releases/tag/latest-master)
+# Mattermost Agents Plugin [![Download Latest Release](https://img.shields.io/badge/Download-Latest%20Release-blue)](https://github.com/r2d-ai/mattermost-plugin-agents/releases/latest)
 
 The Mattermost Agents Plugin integrates AI capabilities directly into your [Mattermost](https://github.com/mattermost/mattermost) workspace. **Run any local LLM** on your infrastructure or connect to cloud providers - you control your data and deployment.
 
@@ -32,13 +32,13 @@ Comprehensive documentation is available in the `/docs` directory:
 
 ## Installation
 
-1. Download the latest release from the [releases page](https://github.com/mattermost/mattermost-plugin-agents/releases). You can also download the **experimental** [latest master](https://github.com/mattermost/mattermost-plugin-agents/releases/tag/latest-master)
+1. Download the plugin `.tar.gz` asset from this fork's [releases page](https://github.com/r2d-ai/mattermost-plugin-agents/releases).
 2. Upload and enable the plugin through the Mattermost System Console
 3. Configure your desired LLM provider settings
 
 ### System Requirements
 
-- Mattermost Server v11.9.0+
+- Mattermost Server v12.0.0+
 - PostgreSQL database with pgvector extension for semantic search capabilities
 - Network access to your chosen LLM provider
 
@@ -66,7 +66,7 @@ See the [Bridge Client README](public/bridgeclient/README.md) for installation a
 
 ### Prerequisites
 
-- Go 1.24+
+- Go 1.26.7+ (see `go.mod`)
 - Node.js 24.11+
 - Access to an LLM provider (OpenAI, Anthropic, etc.)
 
@@ -78,7 +78,7 @@ See the [Bridge Client README](public/bridgeclient/README.md) for installation a
 
 3. Clone the repository:
 ```bash
-git clone https://github.com/mattermost/mattermost-plugin-agents.git
+git clone https://github.com/r2d-ai/mattermost-plugin-agents.git
 cd mattermost-plugin-agents
 ```
 
@@ -102,6 +102,24 @@ make deploy
 - Run `make e2e` to run the e2e tests
 - Run `make evals` to run prompt evaluations interactively (with TUI)
 - Run `make evals-ci` to run prompt evaluations in CI mode (non-interactive)
+
+### Release builds
+
+The [Release workflow](.github/workflows/release.yml) automatically builds and uploads installable assets whenever a GitHub release or prerelease is published in this fork.
+
+1. Merge the changes to release, including the workflow, into `master`.
+2. Create a GitHub release with a version tag such as `v2.10.1-r2d.1` targeting that commit, then publish it. Tags must use `vMAJOR.MINOR.PATCH`, optionally followed by prerelease or build metadata.
+3. Wait for the **Release** workflow to finish. The release's **Assets** will contain `mattermost-ai-<version>.tar.gz` and `SHA256SUMS`.
+
+The single plugin archive includes Linux amd64/arm64, macOS amd64/arm64, and Windows amd64 server binaries plus the production webapp. Its manifest version comes from the selected tag, including when multiple tags point to the same commit. The build uses Go from `go.mod` and Node from `.nvmrc`, and needs no custom repository secrets. Only the asset upload job receives `contents: write` through GitHub's automatic token.
+
+To rebuild an existing published release, open **Actions → Release → Run workflow** and enter its exact tag. A rerun replaces only the generated archive and `SHA256SUMS` with the same names. Releases created by another workflow using `GITHUB_TOKEN` need this manual run because [GitHub suppresses recursive workflow triggers](https://docs.github.com/en/actions/how-tos/writing-workflows/choosing-when-your-workflow-runs/triggering-a-workflow). The published release must allow asset uploads; [immutable releases cannot accept new assets after publication](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository).
+
+Download both assets into the same directory to verify the archive:
+
+```bash
+sha256sum --check SHA256SUMS
+```
 
 ### Benchmark Tests
 
