@@ -1018,6 +1018,8 @@ You can authenticate using Mattermost Personal Access Tokens (PAT):
 
 The plugin distinguishes four license levels: Free (no license), Professional, Enterprise, and Enterprise Advanced. Each level includes everything available at the levels below it. The Entry license behaves as Enterprise. A development server (`EnableDeveloper` and `EnableTesting` both on) exercises every capability.
 
+In this fork, agents can respond to `@mentions` in public channels, private channels, and group messages without a license. The **loop in** action is also available in public and private channel threads. Existing user and channel access restrictions still apply, and responses keep the existing thread behavior. Channel auto-reply without a mention and state-changing tools retain their separate requirements below.
+
 | | Free | Professional | Enterprise | Ent. Advanced |
 |---|---|---|---|---|
 | AI agents | 1 | 3 | unlimited | unlimited |
@@ -1026,7 +1028,7 @@ The plugin distinguishes four license levels: Free (no license), Professional, E
 | Personal custom prompts | ✅ | ✅ | ✅ | ✅ |
 | Built-in Mattermost tools | read-only | read-only | read + write | read + write |
 | Agent direct messages | ✅ | ✅ | ✅ | ✅ |
-| Multiplayer agents in channels | — | ✅ | ✅ | ✅ |
+| Multiplayer agents in channels | ✅ | ✅ | ✅ | ✅ |
 | Thread summarization | — | ✅ | ✅ | ✅ |
 | Channel & unread summarization | — | ✅ | ✅ | ✅ |
 | Provider-native web search | — | ✅ | ✅ | ✅ |

@@ -46,7 +46,7 @@ export type Capability =
 
 // capabilityMinLevel is the tier chart: the minimum level at which each capability is available.
 const capabilityMinLevel: Record<Capability, LicenseLevel> = {
-    multiplayer_channels: LicenseLevel.Professional,
+    multiplayer_channels: LicenseLevel.Unlicensed,
     thread_summarization: LicenseLevel.Professional,
     channel_summarization: LicenseLevel.Professional,
     provider_web_search: LicenseLevel.Professional,
