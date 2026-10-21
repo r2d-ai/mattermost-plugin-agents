@@ -255,7 +255,7 @@ func sanitizeUserProfileField(s string) string {
 // WithLLMContextSessionID removed: embedded MCP manages its own session lifecycle
 
 // isRemoteMCPLicensed reports whether remote and plugin MCP servers are
-// available at the current license level. A nil checker fails closed.
+// available under the fork's capability policy, including without a license.
 func (b *Builder) isRemoteMCPLicensed() bool {
 	return b.licenseChecker.Allows(enterprise.CapRemoteMCP)
 }
@@ -281,9 +281,8 @@ func (b *Builder) getToolsStoreForUser(ctx stdcontext.Context, c *llm.Context, b
 		return llm.NewToolStore()
 	}
 
-	// useServiceAccount is only true when CapMCPServiceAccount is available,
-	// which is at the same level as CapRemoteMCP, so the selection below never
-	// excludes remote service-account servers.
+	// Remote MCP is available without a license. Service-account catalogs keep
+	// their separate capability check; otherwise connections use the requester.
 	remoteMCPLicensed := b.isRemoteMCPLicensed()
 	useServiceAccount := b.UsesServiceAccountCatalog(bot)
 

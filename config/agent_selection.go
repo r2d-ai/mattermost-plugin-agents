@@ -24,8 +24,8 @@ const (
 )
 
 // AgentPool returns configuration-file bots followed by user-created agents
-// ordered by creation time (then ID), which is the order agents take slots in
-// the agent cap. dbAgents is not modified; nil entries are skipped.
+// ordered by creation time (then ID). dbAgents is not modified; nil entries
+// are skipped.
 func AgentPool(fileBots []llm.BotConfig, dbAgents []*llm.BotConfig) []llm.BotConfig {
 	sorted := slices.Clone(dbAgents)
 	sorted = slices.DeleteFunc(sorted, func(a *llm.BotConfig) bool { return a == nil })
@@ -48,9 +48,8 @@ func AgentPool(fileBots []llm.BotConfig, dbAgents []*llm.BotConfig) []llm.BotCon
 }
 
 // AgentInactiveReasons classifies each agent in pool (ordered as by AgentPool)
-// at level. Agents with a missing or incomplete LLM service, or one that is
-// not active at level, never occupy a slot; the remaining agents take slots in
-// pool order until the agent cap is reached.
+// at level. Missing or incomplete services and invalid agent configurations
+// still prevent activation. This fork has no license-based agent or service cap.
 func AgentInactiveReasons(services []llm.ServiceConfig, pool []llm.BotConfig, level enterprise.Level) []AgentInactiveReason {
 	cfg := &Config{Services: services}
 	byID := llm.ServiceLookup(services)

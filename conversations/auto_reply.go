@@ -54,9 +54,10 @@ func (c *Conversations) handleAutoReply(ctx context.Context, setting *autoreply.
 		return fmt.Errorf("auto-reply mode root_posts ignores thread replies: %w", ErrNoResponse)
 	}
 
-	// Re-check the license at trigger time; fail closed on a nil checker.
-	if !c.licenseChecker.Allows(enterprise.CapChannelAutoReply) {
-		return fmt.Errorf("channel agent auto-reply is available at Enterprise Advanced and above: %w", ErrNoResponse)
+	// Apply the same capability policy as configuration writes. Auto-reply is
+	// available without a license in this fork.
+	if err := c.licenseChecker.Check(enterprise.CapChannelAutoReply); err != nil {
+		return fmt.Errorf("channel agent auto-reply is unavailable: %v: %w", err, ErrNoResponse)
 	}
 
 	// Re-check the bot still exists and is allowed: the bot may have been

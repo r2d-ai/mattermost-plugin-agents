@@ -4,6 +4,7 @@
 package mcp
 
 import (
+	"context"
 	"testing"
 
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise"
@@ -12,6 +13,31 @@ import (
 	"github.com/mattermost/mattermost/server/public/pluginapi"
 	"github.com/stretchr/testify/require"
 )
+
+func TestClientManagerConnectsRemoteToolsAtEveryLevel(t *testing.T) {
+	checkers := map[string]*enterprise.LicenseChecker{"nil checker": nil}
+	for _, level := range enterprisetest.AllLevels {
+		checkers[level.String()] = enterprisetest.CheckerAt(level)
+	}
+	for name, checker := range checkers {
+		t.Run(name, func(t *testing.T) {
+			harness := newRuntimeHarness(t, "alice")
+			remote := harness.addRemote("remote", 1, 0)
+			harness.addPlugin("com.example.demo", "plugin", 1, 0)
+			harness.withEmbedded("embedded_tool", 0)
+			manager := harness.newManager()
+			manager.remoteAllowed = func() bool { return checker.Allows(enterprise.CapRemoteMCP) }
+
+			tools, errs := manager.GetToolsForUser(context.Background(), "alice", ToolSelection{})
+			require.Nil(t, errs)
+			require.Equal(t, map[string]int{
+				remote.BaseURL: 1, pluginServerOriginKey("com.example.demo"): 1, EmbeddedClientKey: 1,
+			}, toolOrigins(tools))
+			require.Equal(t, 1, harness.remoteSrv["remote"].dialCount())
+			require.Equal(t, 1, harness.pluginSrv["com.example.demo"].dialCount())
+		})
+	}
+}
 
 func TestClientManagerRemoteMCPLicenseGate(t *testing.T) {
 	pluginTestAPI := &plugintest.API{}
@@ -63,18 +89,10 @@ func TestClientManagerRemoteMCPLicenseGate(t *testing.T) {
 			identities := m.liveOriginIdentities(cfg, nil, false)
 			require.Contains(t, identities, EmbeddedClientKey, "embedded server stays connected at every level")
 
-			if level >= enterprise.LevelEnterprise {
-				require.Len(t, resolved.remote, 1)
-				require.Len(t, resolved.plugins, 1)
-				require.Contains(t, identities, remoteURL)
-				require.Contains(t, identities, pluginServerOriginKey(pluginID))
-				return
-			}
-
-			require.Empty(t, resolved.remote)
-			require.Empty(t, resolved.plugins)
-			require.NotContains(t, identities, remoteURL)
-			require.NotContains(t, identities, pluginServerOriginKey(pluginID))
+			require.Len(t, resolved.remote, 1)
+			require.Len(t, resolved.plugins, 1)
+			require.Contains(t, identities, remoteURL)
+			require.Contains(t, identities, pluginServerOriginKey(pluginID))
 		})
 	}
 

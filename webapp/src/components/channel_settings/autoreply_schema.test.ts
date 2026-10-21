@@ -142,8 +142,11 @@ describe('shouldRenderChannelAutoReplyTab', () => {
         {name: 'open channel with permission but all agents filtered out', type: 'O', perms: bothPerms, bots: [filteredOut], want: false},
         {name: 'open channel with the public manage permission and an agent', type: 'O', perms: [PERMISSION_MANAGE_PUBLIC_CHANNEL_PROPERTIES], bots: [bot], want: true},
         {name: 'private channel with the private manage permission and an agent', type: 'P', perms: [PERMISSION_MANAGE_PRIVATE_CHANNEL_PROPERTIES], bots: [bot], want: true},
-        {name: 'open channel with permission and an agent on an Enterprise license', type: 'O', perms: bothPerms, bots: [bot], sku: 'enterprise', want: false},
-        {name: 'open channel with permission and an agent without a license', type: 'O', perms: bothPerms, bots: [bot], sku: '', want: false},
+        {name: 'open channel with permission and an agent on an Enterprise license', type: 'O', perms: bothPerms, bots: [bot], sku: 'enterprise', want: true},
+        {name: 'open channel with permission and an agent without a license', type: 'O', perms: bothPerms, bots: [bot], sku: '', want: true},
+        {name: 'private channel with permission and an agent without a license', type: 'P', perms: bothPerms, bots: [bot], sku: '', want: true},
+        {name: 'unlicensed channel member without manage permission', type: 'O', perms: [], bots: [bot], sku: '', want: false},
+        {name: 'unlicensed channel manager without an accessible agent', type: 'O', perms: bothPerms, bots: [filteredOut], sku: '', want: false},
     ])('$name -> $want', ({type, perms, bots, sku, want}: {type: string; perms: string[]; bots: LLMBot[] | null; sku?: string; want: boolean}) => {
         const state = makeState({bots, channelPermissions: perms, skuShortName: sku});
         expect(shouldRenderChannelAutoReplyTab(state, makeChannel(type))).toBe(want);

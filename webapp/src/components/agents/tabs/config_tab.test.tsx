@@ -4,6 +4,8 @@
 import React from 'react';
 import {fireEvent, render, screen, waitFor, within} from '@testing-library/react';
 import {IntlProvider} from 'react-intl';
+import {Provider} from 'react-redux';
+import {createStore} from 'redux';
 
 import {ChannelAccessLevel, UserAccessLevel} from '@/components/system_console/bot';
 import {ServiceInfo} from '@/types/agents';
@@ -47,6 +49,7 @@ jest.mock('@/client', () => ({
 }));
 
 jest.mock('@/license', () => ({
+    ...jest.requireActual('@/license'),
     LicenseLevel: {Unlicensed: 0, Professional: 1, Enterprise: 2, EnterpriseAdvanced: 3},
     useIsLicensedFor: jest.fn(() => true),
     useServiceLimit: jest.fn(() => null),
@@ -233,6 +236,42 @@ describe('ConfigTab license gating', () => {
 
         chooseOption(getSelect('AI Service'), openaiService.name);
         expect(onChange).toHaveBeenCalledWith(expect.objectContaining({serviceId: openaiService.id}));
+    });
+
+    test('the real free policy allows selecting another provider while native web search stays unavailable', async () => {
+        const license = jest.requireActual('@/license');
+        useIsLicensedFor.mockImplementation(license.useIsLicensedFor);
+        useServiceLimit.mockImplementation(license.useServiceLimit);
+        const second: ServiceInfo = {...openaiService, id: 'svc_other', name: 'Other'};
+        const onChange = jest.fn();
+        const store = createStore(() => ({
+            entities: {
+                general: {
+                    config: {EnableTesting: 'false', EnableDeveloper: 'false'},
+                    license: {IsLicensed: 'false'},
+                },
+            },
+        }));
+        render(
+            <Provider store={store}>
+                <IntlProvider locale='en'>
+                    <ConfigTab
+                        draft={makeDraft({enabledNativeTools: []})}
+                        onChange={onChange}
+                        onAvatarChange={jest.fn()}
+                        services={[openaiService, second]}
+                    />
+                </IntlProvider>
+            </Provider>,
+        );
+
+        await screen.findByText('AI Service');
+        expect(screen.queryByText(/Only the first configured service is active/)).toBeNull();
+        chooseOption(getSelect('AI Service'), 'Other');
+        expect(onChange).toHaveBeenCalledWith(expect.objectContaining({serviceId: second.id}));
+
+        fireEvent.click(screen.getByRole('button', {name: /Advanced configuration/}));
+        expect((screen.getByTestId('native-tool-web_search') as HTMLInputElement).disabled).toBe(true);
     });
 
     test('lets an unlicensed admin turn native web search off but not on', async () => {

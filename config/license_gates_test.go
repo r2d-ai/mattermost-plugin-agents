@@ -26,11 +26,7 @@ func TestActiveServiceIDs(t *testing.T) {
 	for _, level := range enterprisetest.AllLevels {
 		t.Run(level.String(), func(t *testing.T) {
 			ids := ActiveServiceIDs(cfg, level)
-			if level >= enterprise.LevelEnterprise {
-				require.Equal(t, []string{"first", "second", "third"}, ids)
-				return
-			}
-			require.Equal(t, []string{"first"}, ids)
+			require.Equal(t, []string{"first", "second", "third"}, ids)
 		})
 	}
 
@@ -55,12 +51,11 @@ func TestValidateLicenseTransition(t *testing.T) {
 		prev     *Config
 		next     Config
 		minLevel enterprise.Level
-		quota    bool
 	}{
 		{
 			name:     "adding a second service",
 			next:     Config{Services: []llm.ServiceConfig{{ID: "s1"}, {ID: "s2"}}},
-			minLevel: enterprise.LevelEnterprise,
+			minLevel: enterprise.LevelUnlicensed,
 		},
 		{
 			name: "unchanged over-limit services are accepted",
@@ -97,8 +92,7 @@ func TestValidateLicenseTransition(t *testing.T) {
 		{
 			name:     "adding a second config bot",
 			next:     overLimitBots,
-			minLevel: enterprise.LevelProfessional,
-			quota:    true,
+			minLevel: enterprise.LevelUnlicensed,
 		},
 		{
 			name: "unchanged over-limit bots are accepted",
@@ -187,7 +181,7 @@ func TestValidateLicenseTransition(t *testing.T) {
 		{
 			name:     "EmbeddingSearchConfig newly enabled",
 			next:     Config{EmbeddingSearchConfig: embeddings.EmbeddingSearchConfig{Type: embeddings.SearchTypeComposite}},
-			minLevel: enterprise.LevelEnterprise,
+			minLevel: enterprise.LevelUnlicensed,
 		},
 		{
 			name:     "EnableCallSummary newly true",
@@ -214,7 +208,7 @@ func TestValidateLicenseTransition(t *testing.T) {
 			next: Config{MCP: MCPConfig{Servers: []MCPServerConfig{
 				{ID: "mcp1", Name: "ext", Enabled: true, BaseURL: "https://mcp.example.com"},
 			}}},
-			minLevel: enterprise.LevelEnterprise,
+			minLevel: enterprise.LevelUnlicensed,
 		},
 		{
 			name: "MCP server newly enabled",
@@ -224,7 +218,7 @@ func TestValidateLicenseTransition(t *testing.T) {
 			next: Config{MCP: MCPConfig{Servers: []MCPServerConfig{
 				{ID: "mcp1", Name: "ext", Enabled: true, BaseURL: "https://mcp.example.com"},
 			}}},
-			minLevel: enterprise.LevelEnterprise,
+			minLevel: enterprise.LevelUnlicensed,
 		},
 		{
 			name: "MCP server turning off is accepted",
@@ -238,7 +232,7 @@ func TestValidateLicenseTransition(t *testing.T) {
 		{
 			name:     "EnablePluginServer newly true",
 			next:     Config{MCP: MCPConfig{EnablePluginServer: true}},
-			minLevel: enterprise.LevelEnterprise,
+			minLevel: enterprise.LevelUnlicensed,
 		},
 		{
 			name: "ServiceAccountHeaders newly non-empty",
@@ -316,10 +310,6 @@ func TestValidateLicenseTransition(t *testing.T) {
 					}
 					require.Error(t, err)
 					require.True(t, errors.Is(err, enterprise.ErrNotLicensed))
-					if tc.quota {
-						require.Contains(t, err.Error(), "AI agent")
-						return
-					}
 					var licErr *enterprise.LicenseError
 					require.True(t, errors.As(err, &licErr))
 					require.Equal(t, tc.minLevel, licErr.RequiredLevel)

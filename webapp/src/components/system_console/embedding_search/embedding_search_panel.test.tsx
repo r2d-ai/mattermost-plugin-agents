@@ -3,6 +3,8 @@
 
 import React from 'react';
 import {fireEvent, render, screen} from '@testing-library/react';
+import {Provider} from 'react-redux';
+import {createStore} from 'redux';
 
 jest.mock('react-intl', () => {
     const React = require('react'); // eslint-disable-line @typescript-eslint/no-shadow, no-shadow, global-require
@@ -27,6 +29,7 @@ jest.mock('react-intl', () => {
 });
 
 jest.mock('@/license', () => ({
+    ...jest.requireActual('@/license'),
     useIsLicensedFor: jest.fn(() => true),
     useLicenseLevelName: jest.fn(() => () => 'Enterprise'),
     requiredLevelFor: jest.fn(() => 2),
@@ -338,7 +341,7 @@ describe('EmbeddingSearchPanel license gating', () => {
         useIsLicensedFor.mockReturnValue(true);
     });
 
-    it('keeps current values visible and disables enabling below Enterprise', () => {
+    it('keeps current values visible and disables enabling when the capability is denied', () => {
         useIsLicensedFor.mockReturnValue(false);
         const onChange = jest.fn();
 
@@ -362,21 +365,32 @@ describe('EmbeddingSearchPanel license gating', () => {
         expect(onChange.mock.calls[0][0].type).toBe('');
     });
 
-    it('allows enabling at Enterprise', () => {
-        useIsLicensedFor.mockReturnValue(true);
+    it('allows enabling on a free workspace through the real license hook', () => {
+        useIsLicensedFor.mockImplementation(jest.requireActual('@/license').useIsLicensedFor);
         const onChange = jest.fn();
+        const store = createStore(() => ({
+            entities: {
+                general: {
+                    config: {EnableTesting: 'false', EnableDeveloper: 'false'},
+                    license: {IsLicensed: 'false'},
+                },
+            },
+        }));
 
         render(
-            <IntlProvider locale='en'>
-                <EmbeddingSearchPanel
-                    value={{...enabledConfig('openai'), type: ''}}
-                    onChange={onChange}
-                />
-            </IntlProvider>,
+            <Provider store={store}>
+                <IntlProvider locale='en'>
+                    <EmbeddingSearchPanel
+                        value={{...enabledConfig('openai'), type: ''}}
+                        onChange={onChange}
+                    />
+                </IntlProvider>
+            </Provider>,
         );
 
         const trueRadio = screen.getAllByDisplayValue('true')[0] as HTMLInputElement;
         expect(trueRadio.disabled).toBe(false);
+        expect(screen.queryByText('Enterprise')).toBeNull();
         fireEvent.click(trueRadio);
         expect(onChange).toHaveBeenCalled();
         expect(onChange.mock.calls[0][0].type).toBe('composite');

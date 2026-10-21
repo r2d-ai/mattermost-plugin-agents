@@ -55,7 +55,7 @@ type channelFollowUpTestMCPToolProvider struct {
 
 func (p *channelFollowUpTestMCPToolProvider) GetToolsWithSelection(_ context.Context, _ mcp.CatalogRequest, selection mcp.ToolSelection) ([]llm.Tool, *mcp.Errors) {
 	// Mirror the real client manager's contract: servers outside the selection
-	// (for example remote servers on an unlicensed installation) are never
+	// (for example servers outside an agent allowlist) are never
 	// contacted, so their tools never appear in the result.
 	var tools []llm.Tool
 	for _, tool := range p.tools {
@@ -103,8 +103,8 @@ func newChannelFollowUpTestBuilder(t *testing.T, mcpTools []llm.Tool, config *ch
 }
 
 // newChannelFollowUpTestBuilderWithLicense builds a context builder whose
-// license state controls remote MCP tool supply: unlicensed builders drop
-// remote-origin tools before they reach the LLM context.
+// license state is available to the context builder, including its separate
+// service-account and other premium capability checks.
 func newChannelFollowUpTestBuilderWithLicense(t *testing.T, mcpTools []llm.Tool, config *channelFollowUpTestConfig, licensed bool) *llmcontext.Builder {
 	t.Helper()
 

@@ -59,26 +59,30 @@ func (l Level) Key() string {
 type Capability string
 
 const (
-	// Channel conversations are available at every level in this fork.
-	CapMultiplayerChannels Capability = "multiplayer_channels"
+	// These capabilities are available at every level in this fork.
+	CapMultiplayerChannels  Capability = "multiplayer_channels"
+	CapThreadSummarization  Capability = "thread_summarization"
+	CapChannelSummarization Capability = "channel_summarization"
+	CapMultipleLLMServices  Capability = "multiple_llm_services"
+	CapRemoteMCP            Capability = "remote_mcp"
+	CapSemanticSearch       Capability = "semantic_search"
+	CapChannelAutoReply     Capability = "channel_auto_reply"
 
 	// Professional and above.
-	CapThreadSummarization   Capability = "thread_summarization"
-	CapChannelSummarization  Capability = "channel_summarization"
-	CapProviderWebSearch     Capability = "provider_web_search"
-	CapAgentAccessControls   Capability = "agent_access_controls"
-	CapTokenAccounting       Capability = "token_accounting"
-	CapSovereignWebSearch    Capability = "sovereign_web_search"
-	CapToolApprovalPolicies  Capability = "tool_approval_policies"
-	CapRemoteMCP             Capability = "remote_mcp"
-	CapSemanticSearch        Capability = "semantic_search"
-	CapMeetings              Capability = "meetings"
-	CapMCPServiceAccount     Capability = "mcp_service_account"
-	CapSharedPrompts         Capability = "shared_prompts"
-	CapMultipleLLMServices   Capability = "multiple_llm_services"
+	CapProviderWebSearch   Capability = "provider_web_search"
+	CapAgentAccessControls Capability = "agent_access_controls"
+	CapTokenAccounting     Capability = "token_accounting"
+
+	// Enterprise and above.
+	CapSovereignWebSearch   Capability = "sovereign_web_search"
+	CapToolApprovalPolicies Capability = "tool_approval_policies"
+	CapMeetings             Capability = "meetings"
+	CapMCPServiceAccount    Capability = "mcp_service_account"
+	CapSharedPrompts        Capability = "shared_prompts"
+	CapStateChangingTools   Capability = "state_changing_tools"
+
+	// Enterprise Advanced.
 	CapModelFallback         Capability = "model_fallback"
-	CapStateChangingTools    Capability = "state_changing_tools"
-	CapChannelAutoReply      Capability = "channel_auto_reply"
 	CapAttributeBasedAccess  Capability = "attribute_based_access"
 	capabilityUnknownDisplay            = "This feature"
 )
@@ -92,23 +96,24 @@ type capabilitySpec struct {
 // is available, plus the admin-facing name used in error messages.
 var capabilities = map[Capability]capabilitySpec{
 	CapMultiplayerChannels:  {LevelUnlicensed, "Multiplayer agents in channels"},
-	CapThreadSummarization:  {LevelProfessional, "Thread summarization"},
-	CapChannelSummarization: {LevelProfessional, "Channel and unread summarization"},
-	CapProviderWebSearch:    {LevelProfessional, "Provider-native web search"},
-	CapAgentAccessControls:  {LevelProfessional, "Agent access controls"},
-	CapTokenAccounting:      {LevelProfessional, "Token accounting"},
+	CapThreadSummarization:  {LevelUnlicensed, "Thread summarization"},
+	CapChannelSummarization: {LevelUnlicensed, "Channel and unread summarization"},
+	CapMultipleLLMServices:  {LevelUnlicensed, "Multiple LLM services"},
+	CapRemoteMCP:            {LevelUnlicensed, "Remote and external MCP servers"},
+	CapSemanticSearch:       {LevelUnlicensed, "Semantic AI search"},
+	CapChannelAutoReply:     {LevelUnlicensed, "Channel agent auto-reply"},
 
-	CapMultipleLLMServices:  {LevelEnterprise, "Multiple LLM services"},
+	CapProviderWebSearch:   {LevelProfessional, "Provider-native web search"},
+	CapAgentAccessControls: {LevelProfessional, "Agent access controls"},
+	CapTokenAccounting:     {LevelProfessional, "Token accounting"},
+
 	CapStateChangingTools:   {LevelEnterprise, "State-changing Mattermost tools"},
 	CapSovereignWebSearch:   {LevelEnterprise, "Sovereign web search"},
 	CapToolApprovalPolicies: {LevelEnterprise, "Tool approval policies"},
-	CapRemoteMCP:            {LevelEnterprise, "Remote and external MCP servers"},
-	CapSemanticSearch:       {LevelEnterprise, "Semantic AI search"},
 	CapMeetings:             {LevelEnterprise, "Meeting transcription and summaries"},
 	CapMCPServiceAccount:    {LevelEnterprise, "MCP service-account authentication"},
 	CapSharedPrompts:        {LevelEnterprise, "Shared prompt libraries"},
 
-	CapChannelAutoReply:     {LevelEnterpriseAdvanced, "Channel agent auto-reply"},
 	CapAttributeBasedAccess: {LevelEnterpriseAdvanced, "Attribute-based access control"},
 	CapModelFallback:        {LevelEnterpriseAdvanced, "LLM fallback chains"},
 }
@@ -129,14 +134,6 @@ func DisplayName(capability Capability) string {
 	}
 	return capabilityUnknownDisplay
 }
-
-// Agent caps per level. Levels not listed here are uncapped.
-const (
-	FreeAgentLimit         = 1
-	ProfessionalAgentLimit = 3
-	// BaseServiceLimit is the number of LLM services available below Enterprise.
-	BaseServiceLimit = 1
-)
 
 // LicenseError reports that a capability is unavailable at the current
 // license level. It never carries license internals beyond the level names.
@@ -234,16 +231,9 @@ func (e *LicenseChecker) AgentLimit() (limit int, ok bool) {
 	return AgentLimitFor(e.Level())
 }
 
-// AgentLimitFor returns the agent cap for level; ok is false when uncapped.
-func AgentLimitFor(level Level) (limit int, ok bool) {
-	switch {
-	case level >= LevelEnterprise:
-		return 0, false
-	case level >= LevelProfessional:
-		return ProfessionalAgentLimit, true
-	default:
-		return FreeAgentLimit, true
-	}
+// AgentLimitFor reports no license-based agent cap at any level in this fork.
+func AgentLimitFor(_ Level) (limit int, ok bool) {
+	return 0, false
 }
 
 // ServiceLimit returns the maximum number of LLM services at the current
@@ -252,46 +242,12 @@ func (e *LicenseChecker) ServiceLimit() (limit int, ok bool) {
 	return ServiceLimitFor(e.Level())
 }
 
-// ServiceLimitFor returns the LLM service cap for level; ok is false when uncapped.
-func ServiceLimitFor(level Level) (limit int, ok bool) {
-	if level >= LevelEnterprise {
-		return 0, false
-	}
-	return BaseServiceLimit, true
+// ServiceLimitFor reports no license-based service cap at any level in this fork.
+func ServiceLimitFor(_ Level) (limit int, ok bool) {
+	return 0, false
 }
 
-// AgentLimitError reports that another AI agent is not available at current.
-// Uncapped levels return nil. abortNotLicensed unwraps the nested *LicenseError
-// for license_required while Error names the numeric cap and the level that
-// raises it (Professional raises the cap to 3; Enterprise removes it).
-func AgentLimitError(current Level) error {
-	limit, ok := AgentLimitFor(current)
-	if !ok {
-		return nil
-	}
-	required := LevelProfessional
-	if current >= LevelProfessional {
-		required = LevelEnterprise
-	}
-	return &agentLimitError{
-		lic:   LicenseError{RequiredLevel: required, CurrentLevel: current},
-		Limit: limit,
-	}
-}
-
-type agentLimitError struct {
-	lic   LicenseError
-	Limit int
-}
-
-func (e *agentLimitError) Error() string {
-	noun := "AI agents"
-	if e.Limit == 1 {
-		noun = "AI agent"
-	}
-	return fmt.Sprintf("the current license level allows %d %s; more agents require a Mattermost %s license", e.Limit, noun, e.lic.RequiredLevel)
-}
-
-func (e *agentLimitError) Unwrap() error {
-	return &e.lic
+// AgentLimitError remains available to existing callers. All levels are uncapped.
+func AgentLimitError(_ Level) error {
+	return nil
 }

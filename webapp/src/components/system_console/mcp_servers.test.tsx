@@ -38,13 +38,22 @@ jest.mock('react-bootstrap', () => ({
     Tooltip: ({children}: {children: React.ReactNode}) => <div>{children}</div>,
 }), {virtual: true});
 
-// The component reads SiteURL via useSelector; null falls back to window.location.origin.
+// A free workspace also lets the license hook read the real shared policy.
+// No SiteURL is set, so the component falls back to window.location.origin.
 jest.mock('react-redux', () => ({
     __esModule: true,
-    useSelector: jest.fn(() => null),
+    useSelector: (selector: (state: unknown) => unknown) => selector({
+        entities: {
+            general: {
+                config: {EnableTesting: 'false', EnableDeveloper: 'false'},
+                license: {IsLicensed: 'false'},
+            },
+        },
+    }),
 }));
 
 jest.mock('@/license', () => ({
+    ...jest.requireActual('@/license'),
     useIsLicensedFor: jest.fn(() => true),
     useLicenseLevelName: jest.fn(() => () => 'Enterprise'),
     requiredLevelFor: jest.fn(() => 2),
@@ -294,7 +303,7 @@ describe('MCPServers license gating', () => {
         mockGetMCPTools.mockResolvedValue({servers: []});
     });
 
-    test('unlicensed: existing empty list stays visible and add is disabled with a chip', async () => {
+    test('a denied capability leaves the empty list visible and disables Add with a chip', async () => {
         mockUseIsLicensedFor.mockReturnValue(false);
 
         renderServers(makeMCPConfig());
@@ -308,7 +317,7 @@ describe('MCPServers license gating', () => {
         });
     });
 
-    test('unlicensed with configured servers: server rows stay visible and add is disabled', async () => {
+    test('a denied capability keeps configured server rows visible and disables Add', async () => {
         mockUseIsLicensedFor.mockReturnValue(false);
 
         renderServers(makeMCPConfig([makeRemoteServer()]));
@@ -334,6 +343,24 @@ describe('MCPServers license gating', () => {
         await waitFor(() => {
             expect(screen.queryByText('Available on Enterprise plans and above')).toBeNull();
         });
+    });
+
+    test('the real free policy allows remote MCP without enabling service-account authentication', async () => {
+        mockUseIsLicensedFor.mockImplementation(jest.requireActual('@/license').useIsLicensedFor);
+        const {onChange} = renderServers(makeMCPConfig([makeRemoteServer({
+            headers: {Authorization: 'Bearer user-token'},
+            serviceAccountHeaders: {Authorization: 'Bearer service-token'},
+        })]));
+
+        const addButton = screen.getByRole('button', {name: /Add Remote MCP Server/}) as HTMLButtonElement;
+        expect(addButton.disabled).toBe(false);
+        expect(screen.getByText('MCP OAuth Callback URL')).not.toBeNull();
+        expect((screen.getByPlaceholderText('Value') as HTMLInputElement).disabled).toBe(false);
+        expect((screen.getByPlaceholderText('Header value (e.g. Bearer token)') as HTMLInputElement).disabled).toBe(true);
+
+        fireEvent.click(addButton);
+        expect(lastChangedServers(onChange)).toHaveLength(2);
+        await waitFor(() => expect(mockGetMCPTools).toHaveBeenCalled());
     });
 });
 
@@ -440,7 +467,7 @@ describe('MCPServers built-in & plugin section', () => {
             }],
         });
 
-        // Unlicensed so remote add is disabled; built-in cards must stay read-only.
+        // Deny remote MCP in the policy; built-in cards must stay read-only.
         mockUseIsLicensedFor.mockReturnValue(false);
         renderServers(makeMCPConfig());
 

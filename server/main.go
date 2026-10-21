@@ -491,7 +491,7 @@ func (p *Plugin) OnActivate() error {
 		}
 		return mcp.ServerConfig{}, false
 	}
-	// Remote and plugin MCP servers are available at Enterprise and above; the
+	// Remote and plugin MCP servers are available at every license level; the
 	// embedded Mattermost server is connected at every level.
 	remoteMCPAllowed := func() bool { return licenseChecker.Allows(enterprise.CapRemoteMCP) }
 	mcpClientManager := mcp.NewClientManager(p.configuration.MCP(), pluginAPI.Log, pluginAPI, mcp.NewOAuthManager(mmClient, oauthCallbackURL, untrustedHTTPClient, serverConfigLookup), ensureEmbeddedMCPServer(), untrustedHTTPClient, mmClient, remoteMCPAllowed, accessChecker)
@@ -851,7 +851,7 @@ func (p *Plugin) shouldBlockAgentNotification(senderID, rootID, postType string,
 
 // licensedPluginServers exposes plugin-registered MCP servers on the external
 // MCP endpoint only where remote and plugin MCP servers are available
-// (Enterprise and above).
+// (available at every license level in this fork).
 type licensedPluginServers struct {
 	registry mcpserver.PluginServerRegistry
 	allowed  func() bool

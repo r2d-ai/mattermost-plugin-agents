@@ -1843,7 +1843,7 @@ func TestHandleUpdatePluginServerLicenseGate(t *testing.T) {
 		body     string
 		minLevel enterprise.Level
 	}{
-		{name: "enabling a disabled server", enabled: false, policy: config.MCPToolPolicyAsk, body: `{"enabled": true}`, minLevel: enterprise.LevelEnterprise},
+		{name: "enabling a disabled server", enabled: false, policy: config.MCPToolPolicyAsk, body: `{"enabled": true}`, minLevel: enterprise.LevelUnlicensed},
 		{name: "widening a tool policy", enabled: true, policy: config.MCPToolPolicyAsk, body: `{"tool_configs": [{"name": "echo", "policy": "auto_run_everywhere", "enabled": true}]}`, minLevel: enterprise.LevelEnterprise},
 		{name: "disabling a server with an auto-run policy", enabled: true, policy: config.MCPToolPolicyAutoRunEverywhere, body: `{"enabled": false}`},
 		{name: "narrowing a tool policy", enabled: true, policy: config.MCPToolPolicyAutoRunEverywhere, body: `{"tool_configs": [{"name": "echo", "policy": "ask", "enabled": true}]}`},

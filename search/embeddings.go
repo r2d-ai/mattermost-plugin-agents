@@ -116,8 +116,8 @@ func InitEmbeddingsSearch(db *sqlx.DB, cfg embeddings.EmbeddingSearchConfig, lic
 		return nil, nil
 	}
 
-	if !licenseChecker.Allows(enterprise.CapSemanticSearch) {
-		return nil, fmt.Errorf("semantic AI search is available at Enterprise and above")
+	if err := licenseChecker.Check(enterprise.CapSemanticSearch); err != nil {
+		return nil, err
 	}
 
 	if cfg.Dimensions <= 0 {

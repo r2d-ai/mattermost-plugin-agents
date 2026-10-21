@@ -6,8 +6,8 @@ This guide walks you through setting up the Mattermost Agents plugin with [Amazo
 
 Before you begin, ensure you have:
 
-- A Mattermost server (v10.11 or later) running on an AWS EC2 instance
-- An active Mattermost Enterprise license
+- A Mattermost server (v12.0.0 or later) running on an AWS EC2 instance
+- This fork's Agents plugin; no Mattermost license is required to configure an LLM provider
 - AWS CLI configured with permissions to create IAM resources
 - Access to the Mattermost System Console as a system administrator
 
@@ -242,7 +242,7 @@ Check [Amazon Bedrock model availability](https://docs.aws.amazon.com/bedrock/la
 | `ThrottlingException: Too many tokens per day` | Your account may have a zero on-demand quota for this model. Check [Service Quotas](https://docs.aws.amazon.com/bedrock/latest/userguide/quotas.html) in the AWS console for your target region. New accounts may need to open an AWS Support ticket or try a different region. |
 | `failed to load AWS config` | Verify the IAM instance profile is attached to the EC2 instance. Check with `curl http://169.254.169.254/latest/meta-data/iam/security-credentials/`. |
 | Agent responds with "An error occurred while accessing the LLM" | Check the server logs for the specific error. Common causes: incorrect model ID, model not available in the selected region, or insufficient IAM permissions. |
-| Plugin won't enable | Ensure you have a valid Mattermost Enterprise license and the plugin version is compatible with your server version. |
+| Plugin won't enable | Verify that the plugin version is compatible with your server version and check the plugin startup logs. This fork does not require a Mattermost license for LLM providers. |
 
 ## Authentication options
 

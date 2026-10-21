@@ -92,7 +92,7 @@ func capabilityRouteTests() []capabilityRouteTest {
 			path:     "/post/postid/analyze?botUsername=permtest",
 			body:     `{`,
 			cap:      enterprise.CapThreadSummarization,
-			minLevel: enterprise.LevelProfessional,
+			minLevel: enterprise.LevelUnlicensed,
 			setup:    setupPostRoute,
 		},
 		{
@@ -128,7 +128,7 @@ func capabilityRouteTests() []capabilityRouteTest {
 			path:     "/channel/channelid/analyze?botUsername=permtest",
 			body:     `{`,
 			cap:      enterprise.CapChannelSummarization,
-			minLevel: enterprise.LevelProfessional,
+			minLevel: enterprise.LevelUnlicensed,
 			setup:    setupChannelRoute,
 		},
 		{
@@ -137,7 +137,7 @@ func capabilityRouteTests() []capabilityRouteTest {
 			path:     "/channel/channelid/interval?botUsername=permtest",
 			body:     `{`,
 			cap:      enterprise.CapChannelSummarization,
-			minLevel: enterprise.LevelProfessional,
+			minLevel: enterprise.LevelUnlicensed,
 			setup:    setupChannelRoute,
 		},
 		{
@@ -146,7 +146,7 @@ func capabilityRouteTests() []capabilityRouteTest {
 			path:     "/search/run?botUsername=permtest",
 			body:     `{"query":"hello"}`,
 			cap:      enterprise.CapSemanticSearch,
-			minLevel: enterprise.LevelEnterprise,
+			minLevel: enterprise.LevelUnlicensed,
 			setup:    setupSearchRoute,
 		},
 		{
@@ -155,7 +155,7 @@ func capabilityRouteTests() []capabilityRouteTest {
 			path:     "/search/raw",
 			body:     `{"query":"hello"}`,
 			cap:      enterprise.CapSemanticSearch,
-			minLevel: enterprise.LevelEnterprise,
+			minLevel: enterprise.LevelUnlicensed,
 		},
 		{
 			name:     "admin reindex",
@@ -163,7 +163,7 @@ func capabilityRouteTests() []capabilityRouteTest {
 			path:     "/admin/reindex",
 			body:     `{}`,
 			cap:      enterprise.CapSemanticSearch,
-			minLevel: enterprise.LevelEnterprise,
+			minLevel: enterprise.LevelUnlicensed,
 			setup:    setupAdminRoute,
 		},
 		{
@@ -172,7 +172,7 @@ func capabilityRouteTests() []capabilityRouteTest {
 			path:     "/admin/reindex/catchup",
 			body:     ``,
 			cap:      enterprise.CapSemanticSearch,
-			minLevel: enterprise.LevelEnterprise,
+			minLevel: enterprise.LevelUnlicensed,
 			setup:    setupAdminRoute,
 		},
 		{
@@ -181,7 +181,7 @@ func capabilityRouteTests() []capabilityRouteTest {
 			path:     "/admin/reindex/rebuild-vector-index",
 			body:     ``,
 			cap:      enterprise.CapSemanticSearch,
-			minLevel: enterprise.LevelEnterprise,
+			minLevel: enterprise.LevelUnlicensed,
 			setup:    setupAdminRoute,
 		},
 	}
@@ -226,7 +226,7 @@ func TestCapabilityRoutesByLevel(t *testing.T) {
 	}
 }
 
-func TestCapabilityRoutesFailClosed(t *testing.T) {
+func TestCapabilityRoutesWithoutLicenseChecker(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	gin.DefaultWriter = io.Discard
 
@@ -250,7 +250,11 @@ func TestCapabilityRoutesFailClosed(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			e.api.ServeHTTP(&plugin.Context{}, recorder, req)
 
-			requireLicenseDenied(t, recorder.Result(), route.cap)
+			if route.minLevel == enterprise.LevelUnlicensed {
+				requireNotLicenseDenied(t, recorder.Result())
+			} else {
+				requireLicenseDenied(t, recorder.Result(), route.cap)
+			}
 		})
 	}
 }

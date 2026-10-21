@@ -3,10 +3,10 @@
 
 import React from 'react';
 import {fireEvent, render, screen, waitFor} from '@testing-library/react';
-import {useSelector} from 'react-redux';
+import {Provider} from 'react-redux';
+import {createStore} from 'redux';
 
 import {deleteAgent, getAgents, getServices} from '@/client';
-import {useAgentLimit, useLicenseLevel} from '@/license';
 import {userHasSystemPermission} from '@/utils/permissions';
 import {UserAgent} from '@/types/agents';
 
@@ -28,30 +28,11 @@ jest.mock('react-intl', () => {
     };
 });
 
-jest.mock('react-redux', () => ({
-    useSelector: jest.fn(),
-}));
-
 // OverlayTrigger renders the overlay alongside children so tests can assert the tooltip text.
 jest.mock('react-bootstrap', () => ({
     OverlayTrigger: ({children, overlay}: {children: React.ReactNode; overlay: React.ReactNode}) => <>{children}{overlay}</>,
     Tooltip: ({children}: {children: React.ReactNode}) => <div>{children}</div>,
 }), {virtual: true});
-
-jest.mock('@/license', () => ({
-    LicenseLevel: {
-        Unlicensed: 0,
-        Professional: 1,
-        Enterprise: 2,
-        EnterpriseAdvanced: 3,
-    },
-    useAgentLimit: jest.fn(),
-    useLicenseLevel: jest.fn(),
-    useLicenseLevelName: jest.fn(() => (level: number) => {
-        const names = ['Unlicensed', 'Professional', 'Enterprise', 'Enterprise Advanced'];
-        return names[level] ?? 'Enterprise';
-    }),
-}));
 
 jest.mock('@/client', () => ({
     getAgents: jest.fn(),
@@ -106,9 +87,6 @@ jest.mock('./delete_agent_dialog', () => ({
     ),
 }));
 
-const mockUseSelector = useSelector as unknown as jest.Mock;
-const mockUseAgentLimit = useAgentLimit as unknown as jest.Mock;
-const mockUseLicenseLevel = useLicenseLevel as unknown as jest.Mock;
 const mockGetAgents = getAgents as unknown as jest.Mock;
 const mockGetServices = getServices as unknown as jest.Mock;
 const mockDeleteAgent = deleteAgent as unknown as jest.Mock;
@@ -126,21 +104,25 @@ function makeAgent(id: string): UserAgent {
     } as UserAgent;
 }
 
-function renderList() {
-    return render(<AgentsList/>);
+function renderList(skuShortName = '') {
+    const store = createStore(() => ({
+        entities: {
+            users: {currentUserId: 'user_1'},
+            general: {
+                config: {EnableTesting: 'false', EnableDeveloper: 'false'},
+                license: {SkuShortName: skuShortName},
+            },
+        },
+    }));
+    return render(<Provider store={store}><AgentsList/></Provider>);
 }
 
 beforeEach(() => {
     jest.clearAllMocks();
-    mockUseSelector.mockImplementation((selector) => selector({
-        entities: {users: {currentUserId: 'user_1'}},
-    }));
 
     // manage_own_agent grants create permission.
     mockUserHasSystemPermission.mockImplementation((_state, _userId, permission) => permission === 'manage_own_agent');
     mockGetServices.mockResolvedValue([]);
-    mockUseAgentLimit.mockReturnValue(1);
-    mockUseLicenseLevel.mockReturnValue(0);
 });
 
 describe('AgentsList create-button gating', () => {
@@ -156,42 +138,30 @@ describe('AgentsList create-button gating', () => {
         await waitFor(() => expect(screen.queryByText(unlicensedQuotaMessage)).toBeNull());
     });
 
-    test('unlicensed at the one-agent cap disables Create and names the Professional plan', async () => {
-        mockGetAgents.mockResolvedValue({agents: [makeAgent('a1')], activeAgentCount: 1});
-
-        renderList();
-
-        await screen.findByText('Agent a1');
-        const button = screen.getByRole('button', {name: 'Create agent'});
-        expect((button as HTMLButtonElement).disabled).toBe(true);
-        expect(screen.getByText(unlicensedQuotaMessage)).not.toBeNull();
-    });
-
-    test('Professional at the three-agent cap disables Create and names the Enterprise plan', async () => {
-        mockUseAgentLimit.mockReturnValue(3);
-        mockUseLicenseLevel.mockReturnValue(1);
+    test.each(['', 'professional', 'enterprise'])('keeps Create enabled above the old quota for SKU "%s"', async (sku) => {
         mockGetAgents.mockResolvedValue({
             agents: [makeAgent('a1'), makeAgent('a2'), makeAgent('a3')],
-            activeAgentCount: 3,
+            activeAgentCount: 10,
         });
 
-        renderList();
+        renderList(sku);
 
         await screen.findByText('Agent a1');
         const button = screen.getByRole('button', {name: 'Create agent'});
-        expect((button as HTMLButtonElement).disabled).toBe(true);
-        expect(screen.getByText(professionalQuotaMessage)).not.toBeNull();
+        expect((button as HTMLButtonElement).disabled).toBe(false);
+        expect(screen.queryByText(unlicensedQuotaMessage)).toBeNull();
+        expect(screen.queryByText(professionalQuotaMessage)).toBeNull();
     });
 
-    test('unlicensed disables Create when server quota is reached but list is empty', async () => {
-        mockGetAgents.mockResolvedValue({agents: [], activeAgentCount: 1});
+    test('unlicensed can create when other users own all existing agents', async () => {
+        mockGetAgents.mockResolvedValue({agents: [], activeAgentCount: 10});
 
         renderList();
 
         await screen.findByText('Loading agents...').then(() => screen.findByText('No agents have been created yet.'));
         const button = screen.getByRole('button', {name: 'Create agent'});
-        expect((button as HTMLButtonElement).disabled).toBe(true);
-        expect(screen.getByText(unlicensedQuotaMessage)).not.toBeNull();
+        expect((button as HTMLButtonElement).disabled).toBe(false);
+        expect(screen.queryByText(unlicensedQuotaMessage)).toBeNull();
     });
 
     test('Create button stays disabled while agents are loading', () => {
@@ -204,20 +174,6 @@ describe('AgentsList create-button gating', () => {
         const button = screen.getByRole('button', {name: 'Create agent'});
         expect((button as HTMLButtonElement).disabled).toBe(true);
     });
-
-    test('Enterprise license keeps Create button enabled regardless of agent count', async () => {
-        mockUseAgentLimit.mockReturnValue(null);
-        mockUseLicenseLevel.mockReturnValue(2);
-        mockGetAgents.mockResolvedValue({agents: [makeAgent('a1'), makeAgent('a2')]});
-
-        renderList();
-
-        await screen.findByText('Agent a1');
-        const button = screen.getByRole('button', {name: 'Create agent'});
-        expect((button as HTMLButtonElement).disabled).toBe(false);
-        expect(screen.queryByText(unlicensedQuotaMessage)).toBeNull();
-        expect(screen.queryByText(professionalQuotaMessage)).toBeNull();
-    });
 });
 
 describe('AgentsList services loading', () => {
@@ -229,6 +185,7 @@ describe('AgentsList services loading', () => {
 
         await screen.findByText('Agent a1');
         expect(mockGetServices).not.toHaveBeenCalled();
+        expect(screen.queryByRole('button', {name: 'Create agent'})).toBeNull();
         expect(screen.queryByText('Failed to load AI services. Using the last loaded list.')).toBeNull();
 
         // The row must be told the services list is unknown so it never renders
@@ -260,7 +217,7 @@ describe('AgentsList services loading', () => {
     });
 });
 
-describe('AgentsList delete quota refresh', () => {
+describe('AgentsList refresh after delete', () => {
     async function deleteLastVisibleAgent() {
         fireEvent.click(screen.getByRole('button', {name: 'Delete Agent a1'}));
         fireEvent.click(screen.getByRole('button', {name: 'Confirm delete'}));
@@ -268,7 +225,7 @@ describe('AgentsList delete quota refresh', () => {
         await waitFor(() => expect(mockGetAgents).toHaveBeenCalledTimes(2));
     }
 
-    test('refetches quota after deleting last visible agent and re-enables Create when server count is 0', async () => {
+    test('refetches after deleting the last visible agent and keeps Create available', async () => {
         mockGetAgents.
             mockResolvedValueOnce({agents: [makeAgent('a1')], activeAgentCount: 1}).
             mockResolvedValueOnce({agents: [], activeAgentCount: 0});
@@ -277,7 +234,7 @@ describe('AgentsList delete quota refresh', () => {
         renderList();
 
         await screen.findByText('Agent a1');
-        expect((screen.getByRole('button', {name: 'Create agent'}) as HTMLButtonElement).disabled).toBe(true);
+        expect((screen.getByRole('button', {name: 'Create agent'}) as HTMLButtonElement).disabled).toBe(false);
 
         await deleteLastVisibleAgent();
 
@@ -286,7 +243,7 @@ describe('AgentsList delete quota refresh', () => {
         expect(screen.queryByText(unlicensedQuotaMessage)).toBeNull();
     });
 
-    test('refetches quota after delete and keeps Create disabled when invisible agents remain', async () => {
+    test('keeps Create available after delete when invisible agents remain', async () => {
         mockGetAgents.
             mockResolvedValueOnce({agents: [makeAgent('a1')], activeAgentCount: 1}).
             mockResolvedValueOnce({agents: [], activeAgentCount: 1});
@@ -298,7 +255,7 @@ describe('AgentsList delete quota refresh', () => {
         await deleteLastVisibleAgent();
 
         const button = screen.getByRole('button', {name: 'Create agent'});
-        expect((button as HTMLButtonElement).disabled).toBe(true);
-        expect(screen.getByText(unlicensedQuotaMessage)).not.toBeNull();
+        expect((button as HTMLButtonElement).disabled).toBe(false);
+        expect(screen.queryByText(unlicensedQuotaMessage)).toBeNull();
     });
 });

@@ -441,11 +441,10 @@ func TestHandleToolCallAutoExecutesPolicyEligiblePendingTools(t *testing.T) {
 			wantRejectionGuidance: false,
 		},
 		{
-			// Remote MCP tools are license-gated at supply time: an
-			// unlicensed context builder drops them from the tool store, so
-			// a marked remote tool must resolve to rejection on resume — not
-			// execute and not fail the whole submission.
-			name:             "unlicensed remote auto-run resume rejects instead of executing",
+			// Remote MCP tools remain available, but automatic execution still
+			// requires the separate tool-policy capability. Recheck it when
+			// resuming a batch paused before a license change.
+			name:             "unlicensed auto-run policy resumes without automatic execution",
 			wouldAutoExecute: true,
 			unlicensed:       true,
 			policyChecker: mapPolicyChecker{
@@ -567,6 +566,15 @@ func TestHandleToolCallAutoExecutesPolicyEligiblePendingTools(t *testing.T) {
 				streamingService:  streamingService,
 				licenseChecker:    licenseChecker,
 				toolPolicyChecker: tc.policyChecker,
+			}
+			if tc.unlicensed {
+				policyConfig := mcp.Config{Servers: []mcp.ServerConfig{{
+					Name: "Jira", BaseURL: origin, Enabled: true,
+					ToolConfigs: []mcp.ToolConfig{{Name: "get_issue", Policy: mcp.ToolPolicyAutoRunEverywhere, Enabled: true}},
+				}}}
+				c.toolPolicyChecker = mcp.NewConfigToolPolicyChecker(func() mcp.Config { return policyConfig }, func() bool {
+					return licenseChecker.Allows(enterprise.CapToolApprovalPolicies)
+				})
 			}
 
 			approvalPost := &model.Post{Id: approvalPostID, UserId: "bot-id"}

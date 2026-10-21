@@ -4,6 +4,8 @@
 import React from 'react';
 import {fireEvent, render, screen} from '@testing-library/react';
 import {IntlProvider} from 'react-intl';
+import {Provider} from 'react-redux';
+import {createStore} from 'redux';
 
 import Services from './services';
 import {type LLMService} from './service';
@@ -45,12 +47,6 @@ jest.mock('react-bootstrap', () => ({
     Tooltip: ({children}: {children: React.ReactNode}) => <div>{children}</div>,
 }), {virtual: true});
 
-jest.mock('@/license', () => ({
-    useServiceLimit: jest.fn(() => null),
-    useLicenseLevelName: jest.fn(() => () => 'Enterprise'),
-    requiredLevelFor: jest.fn(() => 2),
-}));
-
 const persistedService: LLMService = {
     id: 'serviceidaaaaaaaaaaaaaaaaa',
     name: 'Persisted',
@@ -72,16 +68,26 @@ const persistedService: LLMService = {
     fallbackServiceID: '',
 };
 
-function renderServices(services: LLMService[], bots: LLMBotConfig[] = []) {
+function renderServices(services: LLMService[], bots: LLMBotConfig[] = [], skuShortName = '') {
     const onChange = jest.fn();
+    const store = createStore(() => ({
+        entities: {
+            general: {
+                config: {EnableTesting: 'false', EnableDeveloper: 'false'},
+                license: {SkuShortName: skuShortName},
+            },
+        },
+    }));
     render(
-        <IntlProvider locale='en'>
-            <Services
-                services={services}
-                bots={bots}
-                onChange={onChange}
-            />
-        </IntlProvider>,
+        <Provider store={store}>
+            <IntlProvider locale='en'>
+                <Services
+                    services={services}
+                    bots={bots}
+                    onChange={onChange}
+                />
+            </IntlProvider>
+        </Provider>,
     );
     return {onChange};
 }
@@ -140,30 +146,15 @@ describe('Services', () => {
     });
 });
 
-describe('Services license gating', () => {
-    const {useServiceLimit} = jest.requireMock('@/license') as {useServiceLimit: jest.Mock};
-
-    beforeEach(() => {
-        useServiceLimit.mockReturnValue(null);
-    });
-
-    it('disables Add when at the service cap and still lists existing services', () => {
-        useServiceLimit.mockReturnValue(1);
-        renderServices([persistedService]);
-
-        const add = screen.getByText('Add an AI Service').closest('button') as HTMLButtonElement;
-        expect(add.disabled).toBe(true);
-        expect(screen.getByText('service:Persisted:serviceidaaaaaaaaaaaaaaaaa')).toBeTruthy();
-        expect(screen.getByText('Enterprise')).toBeTruthy();
-    });
-
-    it('enables Add at Enterprise when uncapped', () => {
-        useServiceLimit.mockReturnValue(null);
-        const {onChange} = renderServices([persistedService]);
+describe('Services without provider quotas', () => {
+    test.each(['', 'professional', 'enterprise'])('allows adding another provider for SKU "%s" without an upgrade badge', (sku) => {
+        const {onChange} = renderServices([persistedService], [], sku);
 
         const add = screen.getByText('Add an AI Service').closest('button') as HTMLButtonElement;
         expect(add.disabled).toBe(false);
+        expect(screen.getByText('service:Persisted:serviceidaaaaaaaaaaaaaaaaa')).toBeTruthy();
+        expect(screen.queryByText('Enterprise')).toBeNull();
         fireEvent.click(add);
-        expect(onChange).toHaveBeenCalled();
+        expect(onChange).toHaveBeenCalledWith([persistedService, expect.objectContaining({id: ''})]);
     });
 });

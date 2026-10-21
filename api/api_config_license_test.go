@@ -15,6 +15,8 @@ import (
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise"
 	"github.com/mattermost/mattermost-plugin-agents/v2/enterprise/enterprisetest"
 	"github.com/mattermost/mattermost-plugin-agents/v2/llm"
+	"github.com/mattermost/mattermost/server/public/model"
+	"github.com/mattermost/mattermost/server/public/plugin"
 	"github.com/stretchr/testify/require"
 )
 
@@ -33,10 +35,9 @@ func TestHandleSaveConfigLicenseGates(t *testing.T) {
 			wantStatus: http.StatusOK,
 		},
 		{
-			name:       "second service is available at Enterprise and above",
-			body:       config.Config{Services: []llm.ServiceConfig{{ID: "s1", Type: "openai"}, {ID: "s2", Type: "openai"}}},
-			minLevel:   enterprise.LevelEnterprise,
-			wantStatus: http.StatusForbidden,
+			name:       "multiple services are available at every level",
+			body:       config.Config{Services: []llm.ServiceConfig{{ID: "s1", Type: "openai"}, {ID: "s2", Type: "openai"}, {ID: "s3", Type: "anthropic"}}},
+			wantStatus: http.StatusOK,
 		},
 		{
 			name:       "token accounting is available at Professional and above",
@@ -89,31 +90,60 @@ func TestHandleSaveConfigLicenseGates(t *testing.T) {
 	}
 }
 
-func TestHandleSaveConfigUnchangedOverLimitAccepted(t *testing.T) {
+func TestHandleSaveConfigMultipleAgentsAndServicesAccepted(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-
-	prev := &config.Config{
-		Services: []llm.ServiceConfig{{ID: "s1", Type: "openai"}, {ID: "s2", Type: "openai"}},
+	proposed := config.Config{
+		Services: []llm.ServiceConfig{{ID: "s1", Type: "openai"}, {ID: "s2", Type: "anthropic"}, {ID: "s3", Type: "openai"}},
 		Bots: []llm.BotConfig{
 			{ID: "b1", Name: "one", DisplayName: "One", ServiceID: "s1"},
-			{ID: "b2", Name: "two", DisplayName: "Two", ServiceID: "s1"},
+			{ID: "b2", Name: "two", DisplayName: "Two", ServiceID: "s2"},
+			{ID: "b3", Name: "three", DisplayName: "Three", ServiceID: "s3"},
 		},
 	}
-	store := &testConfigStore{cfg: prev}
-	router := gin.New()
-	a := &API{
-		configStore:     store,
-		configUpdater:   &testConfigUpdater{},
-		clusterNotifier: &testClusterNotifier{},
-		licenseChecker:  enterprisetest.CheckerAt(enterprise.LevelUnlicensed),
+	for _, tc := range []struct {
+		name       string
+		admin      bool
+		nilChecker bool
+	}{
+		{name: "free admin can save all agents and providers", admin: true},
+		{name: "admin without checker can save all agents and providers", admin: true, nilChecker: true},
+		{name: "non-admin remains forbidden"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := SetupTestEnvironment(t)
+			defer e.Cleanup(t)
+			e.OverrideLicense(nil)
+			if tc.nilChecker {
+				e.api.licenseChecker = nil
+			}
+			e.mockAPI.On("HasPermissionTo", testUserID, model.PermissionManageSystem).Return(tc.admin)
+			store := &testConfigStore{cfg: &config.Config{}}
+			updater := &testConfigUpdater{}
+			e.api.configStore = store
+			e.api.configUpdater = updater
+			e.api.clusterNotifier = &testClusterNotifier{}
+			body, err := json.Marshal(proposed)
+			require.NoError(t, err)
+			req := httptest.NewRequest(http.MethodPut, "/admin/config", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Mattermost-User-ID", testUserID)
+			w := httptest.NewRecorder()
+			e.api.ServeHTTP(&plugin.Context{}, w, req)
+			if !tc.admin {
+				require.Equal(t, http.StatusForbidden, w.Code)
+				require.Empty(t, store.cfg.Services)
+				require.Empty(t, store.cfg.Bots)
+				require.Zero(t, updater.callCount)
+				return
+			}
+			require.Equal(t, http.StatusOK, w.Code)
+			require.Len(t, store.cfg.Services, 3)
+			require.Len(t, store.cfg.Bots, 3)
+			require.Equal(t, 1, updater.callCount)
+			var saved config.Config
+			require.NoError(t, json.NewDecoder(w.Body).Decode(&saved))
+			require.Equal(t, proposed.Bots, saved.Bots)
+			require.Len(t, saved.Services, 3)
+		})
 	}
-	router.PUT("/admin/config", a.handleSaveConfig)
-
-	body, err := json.Marshal(*prev)
-	require.NoError(t, err)
-	req := httptest.NewRequest(http.MethodPut, "/admin/config", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	router.ServeHTTP(w, req)
-	require.Equal(t, http.StatusOK, w.Code)
 }

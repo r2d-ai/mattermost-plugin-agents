@@ -28,8 +28,7 @@ type ToolSelection struct {
 	DeniedOrigins []string
 
 	// ExcludeRemoteServers drops everything but the embedded Mattermost
-	// server. Remote and plugin MCP servers are available at Enterprise and
-	// above, so below that level they are never contacted.
+	// server. Excluded remote and plugin servers are never contacted.
 	ExcludeRemoteServers bool
 }
 

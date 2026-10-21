@@ -102,7 +102,7 @@ func setupChannelAnalysisAPI(t *testing.T, dynamicLoading bool) (*TestEnvironmen
 	require.NoError(t, err)
 
 	e.api.licenseChecker = enterprise.NewLicenseChecker(e.client)
-	e.OverrideLicense(&model.License{SkuShortName: "advanced"})
+	e.OverrideLicense(nil)
 	siteName := "Mattermost"
 	siteURL := "https://example.com"
 	e.mockAPI.On("GetConfig").Return(&model.Config{

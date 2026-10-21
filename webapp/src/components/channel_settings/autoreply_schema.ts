@@ -65,8 +65,8 @@ export const shouldRenderChannelAutoReplyTab = (state: GlobalState, channel: Cha
         return false;
     }
 
-    // Channel agent auto-reply is available at Enterprise Advanced; below it a
-    // stored setting is inactive and stays clearable through the REST API.
+    // Match the server capability policy; channel-management permissions and
+    // agent access still decide who can configure automatic replies.
     if (!licenseAllows(state, 'channel_auto_reply')) {
         return false;
     }

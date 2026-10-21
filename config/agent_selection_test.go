@@ -47,28 +47,28 @@ func TestAgentInactiveReasons(t *testing.T) {
 		want  []AgentInactiveReason
 	}{
 		{
-			name:  "unlicensed keeps the first agent on the first service",
+			name:  "unlicensed runs multiple agents on the first service",
 			level: enterprise.LevelUnlicensed,
 			pool:  []llm.BotConfig{agent("a", "first"), agent("b", "first")},
-			want:  []AgentInactiveReason{AgentActive, AgentInactiveAgentLimit},
+			want:  []AgentInactiveReason{AgentActive, AgentActive},
 		},
 		{
-			name:  "unlicensed agent on a second service takes no slot",
+			name:  "unlicensed runs agents on different services",
 			level: enterprise.LevelUnlicensed,
 			pool:  []llm.BotConfig{agent("a", "second"), agent("b", "first")},
-			want:  []AgentInactiveReason{AgentInactiveServiceNotLicensed, AgentActive},
+			want:  []AgentInactiveReason{AgentActive, AgentActive},
 		},
 		{
 			name:  "unlicensed with every agent on a second service",
 			level: enterprise.LevelUnlicensed,
 			pool:  []llm.BotConfig{agent("a", "second"), agent("b", "second")},
-			want:  []AgentInactiveReason{AgentInactiveServiceNotLicensed, AgentInactiveServiceNotLicensed},
+			want:  []AgentInactiveReason{AgentActive, AgentActive},
 		},
 		{
-			name:  "professional caps at three",
+			name:  "professional runs more than three agents",
 			level: enterprise.LevelProfessional,
 			pool:  []llm.BotConfig{agent("a", "first"), agent("b", "first"), agent("c", "first"), agent("d", "first")},
-			want:  []AgentInactiveReason{AgentActive, AgentActive, AgentActive, AgentInactiveAgentLimit},
+			want:  []AgentInactiveReason{AgentActive, AgentActive, AgentActive, AgentActive},
 		},
 		{
 			name:  "enterprise runs agents on every service",
@@ -83,7 +83,7 @@ func TestAgentInactiveReasons(t *testing.T) {
 			want:  []AgentInactiveReason{AgentInactiveServiceUnavailable, AgentActive},
 		},
 		{
-			name:  "deleted service below enterprise takes no slot",
+			name:  "deleted service without a license is still unavailable",
 			level: enterprise.LevelUnlicensed,
 			pool:  []llm.BotConfig{agent("a", "deleted"), agent("b", "first")},
 			want:  []AgentInactiveReason{AgentInactiveServiceUnavailable, AgentActive},

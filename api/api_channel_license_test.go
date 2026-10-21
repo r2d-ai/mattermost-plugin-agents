@@ -30,7 +30,7 @@ func TestChannelAnalysisLicenseMiddleware(t *testing.T) {
 		licensed bool
 	}{
 		{
-			name:     "analyze endpoint is blocked when unlicensed",
+			name:     "analyze endpoint is available when unlicensed",
 			endpoint: "/channel/channelid/analyze?botUsername=permtest",
 			body:     `{`,
 			licensed: false,
@@ -42,7 +42,7 @@ func TestChannelAnalysisLicenseMiddleware(t *testing.T) {
 			licensed: true,
 		},
 		{
-			name:     "interval endpoint is blocked when unlicensed",
+			name:     "interval endpoint is available when unlicensed",
 			endpoint: "/channel/channelid/interval?botUsername=permtest",
 			body:     `{`,
 			licensed: false,
@@ -87,12 +87,7 @@ func TestChannelAnalysisLicenseMiddleware(t *testing.T) {
 			e.api.ServeHTTP(&plugin.Context{}, recorder, request)
 			resp := recorder.Result()
 
-			if test.licensed {
-				require.NotEqual(t, http.StatusForbidden, resp.StatusCode)
-				return
-			}
-
-			require.Equal(t, http.StatusForbidden, resp.StatusCode)
+			require.Equal(t, http.StatusBadRequest, resp.StatusCode, "invalid JSON must reach summary validation at every tier")
 		})
 	}
 }
