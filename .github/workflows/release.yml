@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag to build (for example, v2.10.1-r2d.1)
+        description: Existing published release tag to build (for example, v2.10.1-r2d.1)
         required: true
         type: string
 
@@ -42,7 +42,7 @@ jobs:
           fi
           release="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")"
           if [[ "$(jq -r '.immutable // false' <<< "$release")" == true ]]; then
-            echo '::error::This release is immutable and cannot accept assets. Build its draft before publishing.'
+            echo '::error::Published immutable releases cannot accept new assets. Attach assets before publishing.'
             exit 1
           fi
 
