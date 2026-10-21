@@ -66,7 +66,7 @@ func TestLevelFor(t *testing.T) {
 	}
 }
 
-func TestLicenseCheckerFailsClosed(t *testing.T) {
+func TestLicenseCheckerUnlicensedFallback(t *testing.T) {
 	tests := []struct {
 		name    string
 		checker *LicenseChecker
@@ -78,13 +78,17 @@ func TestLicenseCheckerFailsClosed(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, LevelUnlicensed, tc.checker.Level())
-			require.False(t, tc.checker.Allows(CapMultiplayerChannels))
+			require.True(t, tc.checker.Allows(CapMultiplayerChannels))
+			require.NoError(t, tc.checker.Check(CapMultiplayerChannels))
 			limit, capped := tc.checker.AgentLimit()
 			require.True(t, capped)
 			require.Equal(t, FreeAgentLimit, limit)
-			var licErr *LicenseError
-			require.ErrorAs(t, tc.checker.Check(CapThreadSummarization), &licErr)
-			require.ErrorIs(t, licErr, ErrNotLicensed)
+			for _, capability := range []Capability{CapThreadSummarization, CapStateChangingTools, CapChannelAutoReply} {
+				require.False(t, tc.checker.Allows(capability))
+				var licErr *LicenseError
+				require.ErrorAs(t, tc.checker.Check(capability), &licErr)
+				require.ErrorIs(t, licErr, ErrNotLicensed)
+			}
 		})
 	}
 }
@@ -123,7 +127,7 @@ func TestCapabilityMatrix(t *testing.T) {
 		cap Capability
 		min Level
 	}{
-		{CapMultiplayerChannels, LevelProfessional},
+		{CapMultiplayerChannels, LevelUnlicensed},
 		{CapThreadSummarization, LevelProfessional},
 		{CapChannelSummarization, LevelProfessional},
 		{CapProviderWebSearch, LevelProfessional},

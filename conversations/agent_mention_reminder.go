@@ -41,8 +41,7 @@ func (c *Conversations) maybeNotifyAgentMentionNeeded(ctx context.Context, post 
 	if channel.Type == model.ChannelTypeDirect || channel.Type == model.ChannelTypeGroup {
 		return
 	}
-	// The reminder points at channel mentions and loop-in, which are
-	// available at Professional and above.
+	// Use the same capability policy as channel mentions and loop-in.
 	if !c.licenseChecker.Allows(enterprise.CapMultiplayerChannels) {
 		return
 	}

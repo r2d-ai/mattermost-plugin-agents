@@ -59,8 +59,10 @@ func (l Level) Key() string {
 type Capability string
 
 const (
+	// Channel conversations are available at every level in this fork.
+	CapMultiplayerChannels Capability = "multiplayer_channels"
+
 	// Professional and above.
-	CapMultiplayerChannels   Capability = "multiplayer_channels"
 	CapThreadSummarization   Capability = "thread_summarization"
 	CapChannelSummarization  Capability = "channel_summarization"
 	CapProviderWebSearch     Capability = "provider_web_search"
@@ -89,7 +91,7 @@ type capabilitySpec struct {
 // capabilities is the tier chart: the minimum level at which each capability
 // is available, plus the admin-facing name used in error messages.
 var capabilities = map[Capability]capabilitySpec{
-	CapMultiplayerChannels:  {LevelProfessional, "Multiplayer agents in channels"},
+	CapMultiplayerChannels:  {LevelUnlicensed, "Multiplayer agents in channels"},
 	CapThreadSummarization:  {LevelProfessional, "Thread summarization"},
 	CapChannelSummarization: {LevelProfessional, "Channel and unread summarization"},
 	CapProviderWebSearch:    {LevelProfessional, "Provider-native web search"},
@@ -158,7 +160,7 @@ func NewLicenseError(capability Capability, current Level) *LicenseError {
 
 // LicenseChecker resolves the server license into a Level and answers
 // capability questions. A nil checker or nil plugin client always reports
-// LevelUnlicensed so every gate fails closed.
+// LevelUnlicensed so paid capabilities remain unavailable.
 type LicenseChecker struct {
 	pluginAPIClient *pluginapi.Client
 }
