@@ -67,8 +67,13 @@ type autoReplyTestEnv struct {
 	botService    *bots.MMBots
 	fakeLLM       *dmTestLLM
 	mcpMgr        *testMCPClientManager
+	toolProvider  *testToolProvider
 	settings      *fakeAutoReplySettings
 	channel       *model.Channel
+	llm           *dmTestLLM
+	config        *testToolCallingConfig
+	checker       *dmPolicyChecker
+	streaming     *fakeStreamingService
 }
 
 // autoReplyBotConfig is the default unrestricted agent configuration used by
@@ -98,10 +103,28 @@ func autoReplySecondBotConfig() llm.BotConfig {
 // LLM), a licensed server, and a fake auto-reply settings lookup wired in.
 func setupAutoReplyTestEnv(t *testing.T, botConfigs []llm.BotConfig, llmResponses ...*llm.TextStreamResult) *autoReplyTestEnv {
 	t.Helper()
-	return setupAutoReplyTestEnvWithChecker(t, botConfigs, false, llmResponses...)
+	return setupAutoReplyTestEnvWithTools(t, botConfigs, nil, &testToolCallingConfig{enableAmbientAutoReply: true}, llmResponses...)
 }
 
 func setupAutoReplyTestEnvWithChecker(t *testing.T, botConfigs []llm.BotConfig, nilChecker bool, llmResponses ...*llm.TextStreamResult) *autoReplyTestEnv {
+	t.Helper()
+	return setupAutoReplyTestEnvWithOptions(t, botConfigs, nil, &testToolCallingConfig{enableAmbientAutoReply: true}, nilChecker, llmResponses...)
+}
+
+// setupAutoReplyTestEnvWithTools is setupAutoReplyTestEnv with the given
+// built-in tools cataloged for every agent and the given tool-calling config.
+func setupAutoReplyTestEnvWithTools(
+	t *testing.T,
+	botConfigs []llm.BotConfig,
+	builtInTools []llm.Tool,
+	toolCallingConfig *testToolCallingConfig,
+	llmResponses ...*llm.TextStreamResult,
+) *autoReplyTestEnv {
+	t.Helper()
+	return setupAutoReplyTestEnvWithOptions(t, botConfigs, builtInTools, toolCallingConfig, false, llmResponses...)
+}
+
+func setupAutoReplyTestEnvWithOptions(t *testing.T, botConfigs []llm.BotConfig, builtInTools []llm.Tool, toolCallingConfig *testToolCallingConfig, nilChecker bool, llmResponses ...*llm.TextStreamResult) *autoReplyTestEnv {
 	t.Helper()
 
 	mockAPI := &plugintest.API{}
@@ -151,24 +174,29 @@ func setupAutoReplyTestEnvWithChecker(t *testing.T, botConfigs []llm.BotConfig, 
 	}
 
 	mcpMgr := &testMCPClientManager{}
-	contextBuilder := llmcontext.NewLLMContextBuilder(pluginClient, &testToolProvider{}, mcpMgr, &mockConfigProvider{})
+	toolProvider := &testToolProvider{tools: builtInTools}
+	contextBuilder := llmcontext.NewLLMContextBuilder(pluginClient, toolProvider, mcpMgr, &mockConfigProvider{})
 	promptsManager, err := llm.NewPrompts(prompts.PromptsFolder)
 	require.NoError(t, err)
 
 	convFakeStore := newFakeConvStore()
 	convSvc := conversation.NewService(convFakeStore, promptsManager, mmClient, botService)
 
+	config := toolCallingConfig
+	streamingService := &fakeStreamingService{}
+	checker := newDMPolicyChecker()
 	convs := conversations.New(
 		promptsManager,
 		mmClient,
-		&fakeStreamingService{},
+		streamingService,
 		contextBuilder,
 		botService,
 		nil, // db
 		licenseChecker,
 		i18n.Init(),
 		nil, // meetings
-		&testToolCallingConfig{},
+		config,
+		checker,
 	)
 	convs.SetConversationService(convSvc)
 
@@ -183,8 +211,13 @@ func setupAutoReplyTestEnvWithChecker(t *testing.T, botConfigs []llm.BotConfig, 
 		botService:    botService,
 		fakeLLM:       fLLM,
 		mcpMgr:        mcpMgr,
+		toolProvider:  toolProvider,
 		settings:      settings,
 		channel:       channel,
+		llm:           fLLM,
+		config:        config,
+		checker:       checker,
+		streaming:     streamingService,
 	}
 }
 

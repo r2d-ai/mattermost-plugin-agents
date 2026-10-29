@@ -46,11 +46,11 @@ func TestHandleRegenerateFreeSummariesPreservesAuthorization(t *testing.T) {
 	}{
 		{name: "thread summary", thread: true},
 		{name: "thread summary without checker", thread: true, nilChecker: true},
-		{name: "thread source access revoked", thread: true, denyRead: true, wantError: "permission to read channel"},
-		{name: "thread summary belongs to another user", thread: true, wrongOwner: true, wantError: "only the original poster"},
-		{name: "channel summary"},
-		{name: "channel summary without checker", nilChecker: true},
-		{name: "channel summary belongs to another user", wrongOwner: true, wantError: "only the original poster"},
+		{name: "thread source access revoked", thread: true, denyRead: true, wantError: ErrAnalysisSourceUnavailable.Error()},
+		{name: "thread summary belongs to another user", thread: true, wrongOwner: true, wantError: "only the original requester"},
+		{name: "channel summary", wantError: ErrNotRegenerable.Error()},
+		{name: "channel summary without checker", nilChecker: true, wantError: ErrNotRegenerable.Error()},
+		{name: "channel summary belongs to another user", wrongOwner: true, wantError: "only the original requester"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -63,11 +63,12 @@ func TestHandleRegenerateFreeSummariesPreservesAuthorization(t *testing.T) {
 			require.NoError(t, err)
 			c.prompts = promptSet
 			c.convService = conversation.NewService(convStore, promptSet, c.mmClient, c.bots)
-			c.mmClient.(*mocks.MockClient).On("KVGet", "user_tool_providers_user-id", mock.Anything).Return(mmapi.ErrKVNotFound).Maybe()
+			c.mmClient.(*mocks.MockClient).On("KVGet", "user_tool_providers_"+testRequesterID, mock.Anything).Return(mmapi.ErrKVNotFound).Maybe()
 			streamer := &summaryRegenerationStreaming{}
 			c.streamingService = streamer
 
 			userPostID := "question-post"
+			c.mmClient.(*mocks.MockClient).On("GetPost", userPostID).Return(&model.Post{Id: userPostID, UserId: testRequesterID, ChannelId: "dm-channel"}, nil).Maybe()
 			post := &model.Post{Id: "summary-post", UserId: "bot-id", ChannelId: "dm-channel"}
 			post.AddProp(streaming.ConversationIDProp, conv.ID)
 			post.AddProp(streaming.RespondingToProp, userPostID)
@@ -75,11 +76,14 @@ func TestHandleRegenerateFreeSummariesPreservesAuthorization(t *testing.T) {
 			if tc.thread {
 				post.AddProp(ThreadIDProp, "thread-root")
 				post.AddProp(AnalysisTypeProp, "summarize_thread")
+				conv.Operation = llm.OperationThreadAnalysis
+				conv.RootPostID = &post.Id
+				require.NoError(t, convStore.CreateConversation(conv))
 				if !tc.wrongOwner {
 					mm := c.mmClient.(*mocks.MockClient)
 					threadPost := &model.Post{Id: "thread-root", ChannelId: "source-channel", UserId: "author-id", Message: "source thread content"}
 					mm.On("GetPost", "thread-root").Return(threadPost, nil).Once()
-					mm.On("HasPermissionToChannel", "user-id", "source-channel", model.PermissionReadChannel).Return(!tc.denyRead).Once()
+					mm.On("HasPermissionToChannel", testRequesterID, "source-channel", model.PermissionReadChannel).Return(!tc.denyRead).Once()
 					if !tc.denyRead {
 						mm.On("GetPostThread", "thread-root").Return(&model.PostList{Order: []string{"thread-root"}, Posts: map[string]*model.Post{"thread-root": threadPost}}, nil).Once()
 						mm.On("GetUser", "author-id").Return(&model.User{Id: "author-id", Username: "author"}, nil).Once()
@@ -98,11 +102,11 @@ func TestHandleRegenerateFreeSummariesPreservesAuthorization(t *testing.T) {
 				require.NoError(t, err)
 				require.NoError(t, convStore.CreateTurn(&store.Turn{ID: seed.role, ConversationID: conv.ID, Role: seed.role, PostID: seed.postID, Content: content, Sequence: i + 1}))
 			}
-			userID := "user-id"
+			userID := testRequesterID
 			if tc.wrongOwner {
 				userID = "other-user"
 			}
-			channel := &model.Channel{Id: "dm-channel", Type: model.ChannelTypeDirect, Name: "bot-id__user-id"}
+			channel := &model.Channel{Id: "dm-channel", Type: model.ChannelTypeDirect, Name: "bot-id__" + testRequesterID}
 			err = c.HandleRegenerate(t.Context(), userID, post, channel)
 			if tc.wantError != "" {
 				require.ErrorContains(t, err, tc.wantError)
