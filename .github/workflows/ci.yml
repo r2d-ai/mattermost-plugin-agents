@@ -268,6 +268,8 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    env:
+      CHAINGUARD_IDENTITY: ${{ secrets.CHAINGUARD_IDENTITY }}
     permissions:
       contents: read
       id-token: write
@@ -279,7 +281,9 @@ jobs:
         with:
           golangci-lint-version: "v1.54.2"
       - uses: mattermost/actions/plugin-ci/build@main
-      - uses: mattermost/actions/plugin-ci/build-fips@c7a06bc642f72fc227deb2cae3af03cff72c0f0d
+      # Private FIPS images require a configured Chainguard identity.
+      - if: env.CHAINGUARD_IDENTITY != ''
+        uses: mattermost/actions/plugin-ci/build-fips@c7a06bc642f72fc227deb2cae3af03cff72c0f0d
         with:
           chainguard-identity: ${{ secrets.CHAINGUARD_IDENTITY }}
       - name: build/upload-all
@@ -306,33 +310,6 @@ jobs:
           go-version-file: 'go.mod'
       - run: make install-go-tools
       - run: make loadtest-controller-build loadtest-controller-lint loadtest-controller-test loadtest-controller-mod-check
-
-  upload-s3-pr:
-    needs: [lint]
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: ci/get-short-sha
-        id: short-sha
-        run: echo "sha=$(echo ${{ github.event.pull_request.head.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
-
-      - name: Build plugin
-        run: make dist-ci
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-
-      - name: Upload dist to S3
-        run: |
-          aws s3 cp dist/mattermost-ai-*.tar.gz s3://${{ secrets.AWS_S3_BUCKET }}/mattermost-plugin-agents/mattermost-plugin-agents-${{ steps.short-sha.outputs.sha }}.tar.gz
 
   deploy:
     needs: [lint, build, plugin-tests, e2e]

@@ -98,8 +98,8 @@ func TestHandleRegenerateFreeSummariesPreservesAuthorization(t *testing.T) {
 				{role: "user", postID: &userPostID, text: "summarize the conversation"},
 				{role: "assistant", postID: &post.Id, text: "previous summary"},
 			} {
-				content, err := json.Marshal([]conversation.ContentBlock{{Type: conversation.BlockTypeText, Text: seed.text}})
-				require.NoError(t, err)
+				content, marshalErr := json.Marshal([]conversation.ContentBlock{{Type: conversation.BlockTypeText, Text: seed.text}})
+				require.NoError(t, marshalErr)
 				require.NoError(t, convStore.CreateTurn(&store.Turn{ID: seed.role, ConversationID: conv.ID, Role: seed.role, PostID: seed.postID, Content: content, Sequence: i + 1}))
 			}
 			userID := testRequesterID

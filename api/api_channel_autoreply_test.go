@@ -541,12 +541,13 @@ func TestPutChannelAutoReplyUnlicensed(t *testing.T) {
 			require.Equal(t, tc.expectedStatus, resp.StatusCode)
 
 			require.Equal(t, tc.expectDeletes, e.autoReplyStore.deleteCalls)
-			if tc.expectedStatus != http.StatusOK {
+			switch {
+			case tc.expectedStatus != http.StatusOK:
 				require.Empty(t, e.autoReplyStore.setCalls)
-			} else if tc.expectDeletes == nil {
+			case tc.expectDeletes == nil:
 				require.Contains(t, e.autoReplyStore.settings, "channelid")
 				require.Len(t, e.autoReplyStore.setCalls, 1)
-			} else {
+			default:
 				require.NotContains(t, e.autoReplyStore.settings, "channelid")
 			}
 		})
