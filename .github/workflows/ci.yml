@@ -268,6 +268,8 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    env:
+      CHAINGUARD_IDENTITY: ${{ secrets.CHAINGUARD_IDENTITY }}
     permissions:
       contents: read
       id-token: write
@@ -279,7 +281,9 @@ jobs:
         with:
           golangci-lint-version: "v1.54.2"
       - uses: mattermost/actions/plugin-ci/build@main
-      - uses: mattermost/actions/plugin-ci/build-fips@c7a06bc642f72fc227deb2cae3af03cff72c0f0d
+      # Private FIPS images require a configured Chainguard identity.
+      - if: env.CHAINGUARD_IDENTITY != ''
+        uses: mattermost/actions/plugin-ci/build-fips@c7a06bc642f72fc227deb2cae3af03cff72c0f0d
         with:
           chainguard-identity: ${{ secrets.CHAINGUARD_IDENTITY }}
       - name: build/upload-all
