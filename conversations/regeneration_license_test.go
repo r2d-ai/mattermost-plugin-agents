@@ -24,7 +24,7 @@ import (
 )
 
 type summaryRegenerationStreaming struct {
-	regenNoopStreaming
+	regenRecordingStreaming
 	calls int
 	text  string
 	err   error
@@ -48,8 +48,8 @@ func TestHandleRegenerateFreeSummariesPreservesAuthorization(t *testing.T) {
 		{name: "thread summary without checker", thread: true, nilChecker: true},
 		{name: "thread source access revoked", thread: true, denyRead: true, wantError: ErrAnalysisSourceUnavailable.Error()},
 		{name: "thread summary belongs to another user", thread: true, wrongOwner: true, wantError: "only the original requester"},
-		{name: "channel summary", wantError: ErrNotRegenerable.Error()},
-		{name: "channel summary without checker", nilChecker: true, wantError: ErrNotRegenerable.Error()},
+		{name: "ordinary summary conversation"},
+		{name: "ordinary summary conversation without checker", nilChecker: true},
 		{name: "channel summary belongs to another user", wrongOwner: true, wantError: "only the original requester"},
 	}
 	for _, tc := range tests {
@@ -84,10 +84,6 @@ func TestHandleRegenerateFreeSummariesPreservesAuthorization(t *testing.T) {
 					threadPost := &model.Post{Id: "thread-root", ChannelId: "source-channel", UserId: "author-id", Message: "source thread content"}
 					mm.On("GetPost", "thread-root").Return(threadPost, nil).Once()
 					mm.On("HasPermissionToChannel", testRequesterID, "source-channel", model.PermissionReadChannel).Return(!tc.denyRead).Once()
-					if !tc.denyRead {
-						mm.On("GetPostThread", "thread-root").Return(&model.PostList{Order: []string{"thread-root"}, Posts: map[string]*model.Post{"thread-root": threadPost}}, nil).Once()
-						mm.On("GetUser", "author-id").Return(&model.User{Id: "author-id", Username: "author"}, nil).Once()
-					}
 				}
 			}
 			for i, seed := range []struct {
@@ -124,56 +120,41 @@ func TestHandleRegenerateFreeSummariesPreservesAuthorization(t *testing.T) {
 }
 
 func TestCheckRegenerateLicense(t *testing.T) {
-	threadPost := &model.Post{}
-	threadPost.AddProp(ThreadIDProp, "thread-root")
-	threadPost.AddProp(AnalysisTypeProp, "summarize_thread")
-
-	channelPost := &model.Post{}
-	channelPost.AddProp(AnalysisTypeProp, "summarize_channel")
-
-	recordingPost := &model.Post{}
-	recordingPost.AddProp(ReferencedRecordingFileID, "fileid")
-
-	transcriptPost := &model.Post{}
-	transcriptPost.AddProp(ReferencedTranscriptPostID, "transcript-post")
-
-	plainPost := &model.Post{}
-
 	tests := []struct {
-		name     string
-		post     *model.Post
-		cap      enterprise.Capability
-		minLevel enterprise.Level
-		ungated  bool
+		name      string
+		operation string
+		cap       enterprise.Capability
+		minLevel  enterprise.Level
+		ungated   bool
 	}{
 		{
-			name:     "thread summary",
-			post:     threadPost,
-			cap:      enterprise.CapThreadSummarization,
-			minLevel: enterprise.LevelUnlicensed,
+			name:      "thread summary",
+			operation: llm.OperationThreadAnalysis,
+			cap:       enterprise.CapThreadSummarization,
+			minLevel:  enterprise.LevelUnlicensed,
 		},
 		{
-			name:     "channel summary",
-			post:     channelPost,
-			cap:      enterprise.CapChannelSummarization,
-			minLevel: enterprise.LevelUnlicensed,
+			name:      "channel summary",
+			operation: llm.OperationChannelSummary,
+			cap:       enterprise.CapChannelSummarization,
+			minLevel:  enterprise.LevelUnlicensed,
 		},
 		{
-			name:     "recording transcription summary",
-			post:     recordingPost,
-			cap:      enterprise.CapMeetings,
-			minLevel: enterprise.LevelEnterprise,
+			name:      "channel interval summary",
+			operation: llm.OperationChannelInterval,
+			cap:       enterprise.CapChannelSummarization,
+			minLevel:  enterprise.LevelUnlicensed,
 		},
 		{
-			name:     "transcription summary",
-			post:     transcriptPost,
-			cap:      enterprise.CapMeetings,
-			minLevel: enterprise.LevelEnterprise,
+			name:      "meeting summary",
+			operation: llm.OperationMeetingSummary,
+			cap:       enterprise.CapMeetings,
+			minLevel:  enterprise.LevelEnterprise,
 		},
 		{
-			name:    "plain conversation post is not gated",
-			post:    plainPost,
-			ungated: true,
+			name:      "plain conversation post is not gated",
+			operation: llm.OperationConversation,
+			ungated:   true,
 		},
 	}
 
@@ -182,7 +163,7 @@ func TestCheckRegenerateLicense(t *testing.T) {
 			for _, level := range enterprisetest.AllLevels {
 				t.Run(level.String(), func(t *testing.T) {
 					c := &Conversations{licenseChecker: enterprisetest.CheckerAt(level)}
-					err := c.checkRegenerateLicense(tc.post)
+					err := c.checkRegenerateLicense(tc.operation)
 					if tc.ungated || level >= tc.minLevel {
 						require.NoError(t, err)
 						return
@@ -197,7 +178,7 @@ func TestCheckRegenerateLicense(t *testing.T) {
 
 			t.Run("nil checker keeps free summaries available", func(t *testing.T) {
 				c := &Conversations{}
-				err := c.checkRegenerateLicense(tc.post)
+				err := c.checkRegenerateLicense(tc.operation)
 				if tc.ungated || tc.minLevel == enterprise.LevelUnlicensed {
 					require.NoError(t, err)
 					return

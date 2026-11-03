@@ -207,7 +207,7 @@ func requireMultiplayerConversationStarted(t *testing.T, env *autoReplyTestEnv, 
 		rootID = post.Id
 	}
 	require.Len(t, env.mmClient.createdPosts, 1)
-	assertInitialResponsePlaceholder(t, env.mmClient.createdPosts[0], autoReplyBotUserID, post.UserId, post.ChannelId, rootID, post.Id)
+	assertInitialResponsePlaceholder(t, env.mmClient.createdPosts[0], autoReplyBotUserID, post.ChannelId, rootID, post.Id)
 	require.Empty(t, env.mmClient.ephemeralPosts)
 
 	convs := allConversations(env.convStore)

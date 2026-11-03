@@ -194,7 +194,6 @@ func setupAutoReplyTestEnvWithOptions(t *testing.T, botConfigs []llm.BotConfig, 
 		nil, // db
 		licenseChecker,
 		i18n.Init(),
-		nil, // meetings
 		config,
 		checker,
 	)

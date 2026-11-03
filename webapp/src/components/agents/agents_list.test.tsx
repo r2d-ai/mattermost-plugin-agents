@@ -129,7 +129,9 @@ function makeAgent(id: string): UserAgent {
     } as UserAgent;
 }
 
-function renderList(skuShortName = '') {
+function renderList(options: string | Partial<React.ComponentProps<typeof AgentsList>> = '') {
+    const skuShortName = typeof options === 'string' ? options : '';
+    const props = typeof options === 'string' ? {} : options;
     const store = createStore(() => ({
         entities: {
             users: {currentUserId: 'user_1'},
@@ -139,7 +141,9 @@ function renderList(skuShortName = '') {
             },
         },
     }));
-    return render(<Provider store={store}><AgentsList/></Provider>);
+    const wrap = (element: React.ReactElement) => <Provider store={store}>{element}</Provider>;
+    const result = render(wrap(<AgentsList onStartChat={jest.fn()} {...props}/>));
+    return {...result, rerender: (element: React.ReactElement) => result.rerender(wrap(element))};
 }
 
 beforeEach(() => {
@@ -361,5 +365,38 @@ describe('AgentsList import and export', () => {
         mockDownloadAgentExport.mockRejectedValueOnce({message: 'Export is not allowed.'});
         fireEvent.click(screen.getByRole('button', {name: 'Export Agent a1'}));
         expect(await screen.findByText('Export is not allowed.')).not.toBeNull();
+    });
+});
+
+describe('AgentsList route-driven create (/agents/all/new)', () => {
+    const cases = [
+        {name: 'allowed: opens the create view', perm: 'manage_own_agent', limit: 3, agents: ['a1'], opens: true},
+        {name: 'system admin: opens the create view', perm: 'manage_system', limit: null, agents: [], opens: true},
+        {name: 'no permission: refused and closed', perm: '', limit: null, agents: [], opens: false},
+        {name: 'no license cap: opens the create view', perm: 'manage_own_agent', limit: 1, agents: ['a1'], opens: true},
+    ];
+    test.each(cases)('$name', async ({perm, agents, opens}) => {
+        mockUserHasSystemPermission.mockImplementation((_s, _u, permission) => permission === perm);
+        mockGetAgents.mockResolvedValue({agents: agents.map(makeAgent), activeAgentCount: agents.length});
+        const onCloseCreate = jest.fn();
+
+        renderList({openCreate: true, onCloseCreate});
+
+        if (opens) {
+            expect((await screen.findByTestId('agent-config-view')).getAttribute('data-mode')).toBe('create');
+            expect(onCloseCreate).not.toHaveBeenCalled();
+        } else {
+            await waitFor(() => expect(onCloseCreate).toHaveBeenCalledTimes(1));
+            expect(screen.queryByTestId('agent-config-view')).toBeNull();
+        }
+    });
+
+    test('closes the view when the route leaves create', async () => {
+        mockGetAgents.mockResolvedValue({agents: [], activeAgentCount: 0});
+        const {rerender} = renderList({openCreate: true});
+        await screen.findByTestId('agent-config-view');
+
+        rerender(<AgentsList onStartChat={jest.fn()}/>);
+        await waitFor(() => expect(screen.queryByTestId('agent-config-view')).toBeNull());
     });
 });
